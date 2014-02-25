@@ -13,7 +13,7 @@
 --
 -----------------------------------------------------------------------------
 
-{-# LANGUAGE DoAndIfThenElse, FlexibleContexts #-}
+{-# LANGUAGE DoAndIfThenElse #-}
 
 module Main where
 
@@ -22,6 +22,7 @@ import Commands
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.Class
+import Control.Monad.Trans.Error
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Control.Monad.Trans.State.Strict
 
@@ -119,8 +120,11 @@ getPreludeFilename = Paths.getDataFileName "prelude/prelude.purs"
 loadModule :: FilePath -> IO (Either String [P.Module])
 loadModule filename = either (Left . show) Right . P.runIndentParser filename P.parseModules <$> U.readFile filename
 
-compileModules :: [P.Module] -> FilePath -> IO (Either String [P.Module])
-compileModules ms fp =
+-- |
+-- Compiles the modules and writes to a file.
+--
+compileModules :: FilePath -> [P.Module] -> IO (Either String [P.Module])
+compileModules fp ms =
   case P.compile P.defaultOptions ms of
     (Left err) -> return $ Left err
     (Right (js, externs, _)) -> do
@@ -277,18 +281,15 @@ handleCommand (LoadFile filePath) = do
   if exists then do
     let filename = takeFileName filePath
     moduleFile <- lift . lift $ getUserCacheFile "purescript" filename
-    mods <- lift . lift $ loadModule absPath
-    case mods of
+    st <- lift get
+    result <- lift . lift . runErrorT $
+      do mods <- ErrorT $ loadModule absPath
+         ErrorT $ compileModules moduleFile (psciLoadedModules st ++ mods)
+    case result of
       Left err -> outputStrLn err
-      Right mods' -> do
-        st <- lift get
-        compiled <- lift . lift $ compileModules (psciLoadedModules st ++ mods') moduleFile
-        case compiled of
-          Left err -> outputStrLn err
-          Right _ -> do
-            lift . modify $ updateModules mods'
-            lift . modify $ updateImportedFiles absPath
-    --either outputStrLn (lift . modify . updateModules) =<< (either outputStrLn (compileModules moduleFile) $ loadModule absPath)
+      Right mods -> do
+        lift . modify $ updateModules mods
+        lift . modify $ updateImportedFiles absPath
   else
     outputStrLn $ "Couldn't locate: " ++ filePath
 handleCommand Reset = do
@@ -316,7 +317,7 @@ loop files = do
     Right modules -> do
       let filename = takeFileName preludeFilename
       moduleFile <- getUserCacheFile "purescript" filename
-      compiled <- compileModules modules moduleFile
+      compiled <- compileModules moduleFile modules
       case compiled of
         Left err -> putStrLn err
         Right _ -> return ()
