@@ -2,10 +2,10 @@
 
 #ifndef POSIX_LIKE
 #define POSIX_LIKE !(defined(_WIN32_HOST_OS) || defined(_WIN64_HOST_OS)) && \
-                  (defined(unix_HOST_OS) || defined(__unix___HOST_OS) || \
-                   defined(__unix_HOST_OS) || defined(linux_HOST_OS) || \
-                   defined(__linux___HOST_OS) || defined(__linux_HOST_OS) || \
-                   (defined(__APPLE___HOST_OS) && defined(__MACH___HOST_OS)))
+                   (defined(unix_HOST_OS) || defined(__unix___HOST_OS) || \
+                    defined(__unix_HOST_OS) || defined(linux_HOST_OS) || \
+                    defined(__linux___HOST_OS) || defined(__linux_HOST_OS) || \
+                    (defined(__APPLE___HOST_OS) && defined(__MACH___HOST_OS)))
 #endif
 
 module Main where
@@ -28,11 +28,19 @@ main = defaultMainWithHooks $ simpleUserHooks {postInst = setupXDG}
 
 setupXDG :: Args -> InstallFlags -> PackageDescription -> LocalBuildInfo -> IO ()
 setupXDG _ _ _ _ = do
-    configDir <- getUserConfigDir "purescript"
-    configExists <- doesDirectoryExist configDir
-    unless configExists $ do
-        createDirectoryIfMissing True configDir
+    dirs <- mapM ($ "purescript") [getUserCacheDir, getUserConfigDir]
+    mapM_ createDirectoryIfMissingXDG dirs
+
+-- |
+-- This is similar to 'System.Directory.createDirectoryIfMissing'
+-- But it does proper XDG Base Directory setup in the process.
+--
+createDirectoryIfMissingXDG :: FilePath -> IO ()
+createDirectoryIfMissingXDG fp = do
+    dirExists <- doesDirectoryExist fp
+    unless dirExists $ do
+        createDirectoryIfMissing True fp
 #if POSIX_LIKE
-        setFileMode configDir ownerModes
+        setFileMode fp ownerModes
 #endif
 #undef POSIX_LIKE

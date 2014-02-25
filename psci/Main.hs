@@ -36,7 +36,7 @@ import System.Console.Haskeline
 import System.Directory (doesFileExist, findExecutable, getHomeDirectory)
 import System.Exit
 import System.Environment.XDG.BaseDir
-import System.FilePath ((</>), isPathSeparator)
+import System.FilePath ((</>), isPathSeparator, takeFileName)
 import qualified System.Console.CmdTheLine as Cmd
 import System.Process
 
@@ -118,6 +118,15 @@ getPreludeFilename = Paths.getDataFileName "prelude/prelude.purs"
 --
 loadModule :: FilePath -> IO (Either String [P.Module])
 loadModule filename = either (Left . show) Right . P.runIndentParser filename P.parseModules <$> U.readFile filename
+
+compileModules :: [P.Module] -> FilePath -> IO (Either String [P.Module])
+compileModules ms fp =
+  case P.compile P.defaultOptions ms of
+    (Left err) -> return $ Left err
+    (Right (js, externs, _)) -> do
+      writeFile (fp ++ ".js")   js
+      writeFile (fp ++ ".e.ps") externs
+      return $ Right ms
 
 -- |
 -- Expands tilde in path.
@@ -266,8 +275,20 @@ handleCommand (LoadFile filePath) = do
   absPath <- lift . lift $ expandTilde filePath
   exists <- lift . lift $ doesFileExist absPath
   if exists then do
-    lift $ modify (updateImportedFiles absPath)
-    either outputStrLn (lift . modify . updateModules) =<< (lift . lift $ loadModule absPath)
+    let filename = takeFileName filePath
+    moduleFile <- lift . lift $ getUserCacheFile "purescript" filename
+    mods <- lift . lift $ loadModule absPath
+    case mods of
+      Left err -> outputStrLn err
+      Right mods' -> do
+        st <- lift get
+        compiled <- lift . lift $ compileModules (psciLoadedModules st ++ mods') moduleFile
+        case compiled of
+          Left err -> outputStrLn err
+          Right _ -> do
+            lift . modify $ updateModules mods'
+            lift . modify $ updateImportedFiles absPath
+    --either outputStrLn (lift . modify . updateModules) =<< (either outputStrLn (compileModules moduleFile) $ loadModule absPath)
   else
     outputStrLn $ "Couldn't locate: " ++ filePath
 handleCommand Reset = do
@@ -293,6 +314,12 @@ loop files = do
   case modulesOrFirstError of
     Left err -> putStrLn err >> exitFailure
     Right modules -> do
+      let filename = takeFileName preludeFilename
+      moduleFile <- getUserCacheFile "purescript" filename
+      compiled <- compileModules modules moduleFile
+      case compiled of
+        Left err -> putStrLn err
+        Right _ -> return ()
       historyFilename <- getHistoryFilename
       let settings = defaultSettings {historyFile = Just historyFilename}
       flip evalStateT (PSCiState (preludeFilename : files) defaultImports modules []) . runInputT (setComplete completion settings) $ do
