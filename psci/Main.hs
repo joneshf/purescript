@@ -34,7 +34,7 @@ import Data.Version (showVersion)
 import Parser
 
 import System.Console.Haskeline
-import System.Directory (doesFileExist, findExecutable, getHomeDirectory)
+import System.Directory (doesFileExist, findExecutable, getHomeDirectory, getModificationTime)
 import System.Exit
 import System.Environment.XDG.BaseDir
 import System.FilePath ((</>), isPathSeparator, takeFileName)
@@ -138,6 +138,13 @@ compileModules fp ms =
 expandTilde :: FilePath -> IO FilePath
 expandTilde ('~':p:rest) | isPathSeparator p = (</> rest) <$> getHomeDirectory
 expandTilde p = return p
+
+isNewer :: FilePath -> FilePath -> IO Bool
+a `isNewer` b = do
+  a' <- getModificationTime a
+  b' <- getModificationTime b
+  return $ a' > b'
+
 -- Messages
 
 -- |
