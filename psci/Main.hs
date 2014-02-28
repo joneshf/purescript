@@ -21,6 +21,7 @@ import Commands
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Error
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
@@ -37,7 +38,7 @@ import System.Console.Haskeline
 import System.Directory (doesFileExist, findExecutable, getHomeDirectory, getModificationTime)
 import System.Exit
 import System.Environment.XDG.BaseDir
-import System.FilePath ((</>), isPathSeparator, takeFileName)
+import System.FilePath ((</>), isPathSeparator, takeBaseName, replaceExtension)
 import qualified System.Console.CmdTheLine as Cmd
 import System.Process
 
@@ -79,7 +80,10 @@ updateImports name st = st { psciImportedModuleNames = name : psciImportedModule
 -- Updates the state to have more loaded files.
 --
 updateModules :: [P.Module] -> PSCiState -> PSCiState
-updateModules modules st = st { psciLoadedModules = psciLoadedModules st ++ modules }
+updateModules modules st = st { psciLoadedModules = newModules }
+  where
+    oldModules = psciLoadedModules st
+    newModules = oldModules ++ filter (`notElem` oldModules) modules
 
 -- |
 -- Updates the state to have more let bindings.
@@ -128,9 +132,12 @@ compileModules fp ms =
   case P.compile P.defaultOptions ms of
     (Left err) -> return $ Left err
     (Right (js, externs, _)) -> do
-      writeFile (fp ++ ".js")   js
-      writeFile (fp ++ ".e.ps") externs
+      writeFile jsName      js
+      writeFile externsName externs
       return $ Right ms
+  where
+    jsName = replaceExtension fp ".js"
+    externsName = replaceExtension fp ".e.ps"
 
 -- |
 -- Expands tilde in path.
@@ -139,11 +146,8 @@ expandTilde :: FilePath -> IO FilePath
 expandTilde ('~':p:rest) | isPathSeparator p = (</> rest) <$> getHomeDirectory
 expandTilde p = return p
 
-isNewer :: FilePath -> FilePath -> IO Bool
-a `isNewer` b = do
-  a' <- getModificationTime a
-  b' <- getModificationTime b
-  return $ a' > b'
+isNewerThan :: FilePath -> FilePath -> IO Bool
+a `isNewerThan` b = (>) <$> getModificationTime a <*> getModificationTime b
 
 -- Messages
 
@@ -238,8 +242,8 @@ handleDeclaration value st = do
   case P.compile options (psciLoadedModules st ++ [m]) of
     Left err -> outputStrLn err
     Right (js, _, _) -> do
-      process <- lift . lift $ findNodeProcess
-      result  <- lift . lift $ traverse (\node -> readProcessWithExitCode node [] js) process
+      process <- liftIO findNodeProcess
+      result  <- liftIO $ traverse (\node -> readProcessWithExitCode node [] js) process
       case result of
         Just (ExitSuccess,   out, _)   -> outputStrLn out
         Just (ExitFailure _, _,   err) -> outputStrLn err
@@ -257,6 +261,33 @@ handleTypeOf value st = do
       case M.lookup (P.ModuleName [P.ProperName "Main"], P.Ident "it") (P.names env') of
         Just (ty, _) -> outputStrLn . P.prettyPrintType $ ty
         Nothing -> outputStrLn "Could not find type"
+
+-- |
+-- Loads the specified 'FilePath' if it exists.
+-- Attempts to use the cache and will recompile the file if necessary.
+--
+handleLoadFile :: FilePath -> InputT (StateT PSCiState IO) ()
+handleLoadFile fp = do
+  absPath <- liftIO $ expandTilde fp
+  exists <- liftIO $ doesFileExist absPath
+  if exists then do
+    let filename = takeBaseName fp ++ ".js"
+    moduleFile <- liftIO $ getUserCacheFile "purescript" filename
+    cacheExists <- liftIO $ doesFileExist moduleFile
+    update <- if cacheExists then liftIO $ absPath `isNewerThan` moduleFile else return True
+    when update $ do
+      st <- lift get
+      result <- liftIO . runErrorT $
+        do mods <- ErrorT $ loadModule absPath
+           ErrorT $ compileModules moduleFile (psciLoadedModules st ++ mods)
+           ErrorT $ return $ Right mods
+      case result of
+        Left err -> outputStrLn err
+        Right mods -> do
+          lift . modify $ updateModules mods
+          lift . modify $ updateImportedFiles absPath
+  else
+    outputStrLn $ "Couldn't locate: " ++ fp
 
 -- Commands
 
@@ -282,28 +313,12 @@ handleCommand (Expression val) = lift get >>= handleDeclaration val
 handleCommand Help = outputStrLn helpMessage
 handleCommand (Import moduleName) = lift $ modify (updateImports moduleName)
 handleCommand (Let l) = lift $ modify (updateLets l)
-handleCommand (LoadFile filePath) = do
-  absPath <- lift . lift $ expandTilde filePath
-  exists <- lift . lift $ doesFileExist absPath
-  if exists then do
-    let filename = takeFileName filePath
-    moduleFile <- lift . lift $ getUserCacheFile "purescript" filename
-    st <- lift get
-    result <- lift . lift . runErrorT $
-      do mods <- ErrorT $ loadModule absPath
-         ErrorT $ compileModules moduleFile (psciLoadedModules st ++ mods)
-    case result of
-      Left err -> outputStrLn err
-      Right mods -> do
-        lift . modify $ updateModules mods
-        lift . modify $ updateImportedFiles absPath
-  else
-    outputStrLn $ "Couldn't locate: " ++ filePath
+handleCommand (LoadFile filePath) = handleLoadFile filePath
 handleCommand Reset = do
   files <- psciImportedFilenames <$> lift get
-  modulesOrFirstError <- fmap concat . sequence <$> mapM (lift . lift . loadModule) files
+  modulesOrFirstError <- fmap concat . sequence <$> mapM (liftIO . loadModule) files
   case modulesOrFirstError of
-    Left err -> lift . lift $ putStrLn err >> exitFailure
+    Left err -> liftIO $ putStrLn err >> exitFailure
     Right modules -> lift $ put (PSCiState files defaultImports modules [])
 handleCommand (TypeOf val) = lift get >>= handleTypeOf val
 handleCommand _ = outputStrLn "Unknown command"
@@ -322,7 +337,7 @@ loop files = do
   case modulesOrFirstError of
     Left err -> putStrLn err >> exitFailure
     Right modules -> do
-      let filename = takeFileName preludeFilename
+      let filename = takeBaseName preludeFilename ++ ".js"
       moduleFile <- getUserCacheFile "purescript" filename
       compiled <- compileModules moduleFile modules
       case compiled of

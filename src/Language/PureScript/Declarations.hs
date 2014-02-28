@@ -32,17 +32,17 @@ type Precedence = Integer
 -- |
 -- Associativity for infix operators
 --
-data Associativity = Infixl | Infixr deriving (Show, D.Data, D.Typeable)
+data Associativity = Infixl | Infixr deriving (Show, Eq, D.Data, D.Typeable)
 
 -- |
 -- Fixity data for infix operators
 --
-data Fixity = Fixity Associativity Precedence deriving (Show, D.Data, D.Typeable)
+data Fixity = Fixity Associativity Precedence deriving (Show, Eq, D.Data, D.Typeable)
 
 -- |
 -- A module declaration, consisting of a module name and a list of declarations
 --
-data Module = Module ModuleName [Declaration] deriving (Show, D.Data, D.Typeable)
+data Module = Module ModuleName [Declaration] deriving (Show, Eq, D.Data, D.Typeable)
 
 -- |
 -- The type of a foreign import
@@ -117,7 +117,7 @@ data Declaration
   -- A type instance declaration (dependencies, class name, instance type, member declarations)
   --
   | TypeInstanceDeclaration [(Qualified ProperName, [Type])] (Qualified ProperName) [Type] [Declaration]
-  deriving (Show, D.Data, D.Typeable)
+  deriving (Show, Eq, D.Data, D.Typeable)
 
 -- |
 -- Test if a declaration is a value declaration

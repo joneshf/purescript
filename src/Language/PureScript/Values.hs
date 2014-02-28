@@ -112,7 +112,7 @@ data Value
   -- can be evaluated at runtime. The constructor arguments represent (in order): the type class name and
   -- instance type, and the type class dictionaries in scope.
   --
-  | TypeClassDictionary (Qualified ProperName, [Type]) [TypeClassDictionaryInScope] deriving (Show, Data, Typeable)
+  | TypeClassDictionary (Qualified ProperName, [Type]) [TypeClassDictionaryInScope] deriving (Show, Eq, Data, Typeable)
 
 -- |
 -- The type of a type class dictionary
@@ -152,7 +152,7 @@ data TypeClassDictionaryInScope
     -- The type of this dictionary
     --
     , tcdType :: TypeClassDictionaryType
-    } deriving (Show, Data, Typeable)
+    } deriving (Show, Eq, Data, Typeable)
 
 -- |
 -- A statement in a do-notation block
@@ -169,7 +169,7 @@ data DoNotationElement
   -- |
   -- A let statement, i.e. a pure value with a binder
   --
-  | DoNotationLet Binder Value deriving (Show, Data, Typeable)
+  | DoNotationLet Binder Value deriving (Show, Eq, Data, Typeable)
 
 -- |
 -- Data type for binders
@@ -214,4 +214,4 @@ data Binder
   -- |
   -- A binder which binds its input to an identifier
   --
-  | NamedBinder Ident Binder deriving (Show, Data, Typeable)
+  | NamedBinder Ident Binder deriving (Show, Eq, Data, Typeable)
