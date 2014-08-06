@@ -188,8 +188,8 @@ renameInModule imports exports (Module mn decls exps) =
     (,) (pos, bound) <$> (TypeSynonymDeclaration name ps <$> updateTypesEverywhere pos ty)
   updateDecl (pos, bound) (TypeClassDeclaration className args implies ds) =
     (,) (pos, bound) <$> (TypeClassDeclaration className args <$> updateConstraints pos implies <*> pure ds)
-  updateDecl (pos, bound) (TypeInstanceDeclaration name cs cn ts ds) =
-    (,) (pos, bound) <$> (TypeInstanceDeclaration name <$> updateConstraints pos cs <*> updateClassName cn pos <*> mapM (updateTypesEverywhere pos) ts <*> pure ds)
+  updateDecl (pos, bound) (TypeInstanceDeclaration deriv name cs cn ts ds) =
+    (,) (pos, bound) <$> (TypeInstanceDeclaration deriv name <$> updateConstraints pos cs <*> updateClassName cn pos <*> mapM (updateTypesEverywhere pos) ts <*> pure ds)
   updateDecl (pos, bound) (ExternInstanceDeclaration name cs cn ts) =
     (,) (pos, bound) <$> (ExternInstanceDeclaration name <$> updateConstraints pos cs <*> updateClassName cn Nothing <*> mapM (updateTypesEverywhere pos) ts)
   updateDecl (pos, bound) (TypeDeclaration name ty) =

@@ -58,8 +58,8 @@ desugarCases :: [Declaration] -> SupplyT (Either ErrorStack) [Declaration]
 desugarCases = desugarRest <=< fmap join . mapM toDecls . groupBy inSameGroup
   where
     desugarRest :: [Declaration] -> SupplyT (Either ErrorStack) [Declaration]
-    desugarRest (TypeInstanceDeclaration name constraints className tys ds : rest) =
-      (:) <$> (TypeInstanceDeclaration name constraints className tys <$> desugarCases ds) <*> desugarRest rest
+    desugarRest (TypeInstanceDeclaration deriv name constraints className tys ds : rest) =
+      (:) <$> (TypeInstanceDeclaration deriv name constraints className tys <$> desugarCases ds) <*> desugarRest rest
     desugarRest (ValueDeclaration name nameKind bs g val : rest) =
       let (_, f, _) = everywhereOnValuesTopDownM return go return
       in (:) <$> (ValueDeclaration name nameKind bs g <$> f val) <*> desugarRest rest

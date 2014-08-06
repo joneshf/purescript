@@ -169,6 +169,7 @@ parseTypeClassDeclaration = do
 
 parseTypeInstanceDeclaration :: P.Parsec String ParseState Declaration
 parseTypeInstanceDeclaration = do
+  deriv <- (P.try (reserved "deriving") *> return DerivedInstance) <|> (return ManualInstance)
   reserved "instance"
   name <- parseIdent <* lexeme (indented *> P.string "::")
   deps <- P.optionMaybe $ do
@@ -181,7 +182,7 @@ parseTypeInstanceDeclaration = do
   members <- P.option [] . P.try $ do
     indented *> reserved "where"
     mark (P.many (same *> positioned parseValueDeclaration))
-  return $ TypeInstanceDeclaration name (fromMaybe [] deps) className ty members
+  return $ TypeInstanceDeclaration deriv name (fromMaybe [] deps) className ty members
 
 positioned :: P.Parsec String ParseState Declaration -> P.Parsec String ParseState Declaration
 positioned d = PositionedDeclaration <$> sourcePos <*> d

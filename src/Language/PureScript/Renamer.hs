@@ -143,8 +143,8 @@ renameInDecl isTopLevel (BindingGroupDeclaration ds) = do
   updateValues :: (Ident, NameKind, Expr) -> Rename (Ident, NameKind, Expr)
   updateValues (name, nameKind, val) =
     (,,) name nameKind <$> renameInValue val
-renameInDecl _ (TypeInstanceDeclaration name cs className args ds) =
-  TypeInstanceDeclaration name cs className args <$> mapM (renameInDecl True) ds
+renameInDecl _ (TypeInstanceDeclaration deriv name cs className args ds) =
+  TypeInstanceDeclaration deriv name cs className args <$> mapM (renameInDecl True) ds
 renameInDecl isTopLevel (PositionedDeclaration pos d) =
   PositionedDeclaration pos <$> renameInDecl isTopLevel d
 renameInDecl _ other = return other

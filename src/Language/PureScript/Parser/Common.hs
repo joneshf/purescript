@@ -52,6 +52,7 @@ reservedPsNames = [ "data"
                   , "false"
                   , "in"
                   , "where"
+                  , "deriving"
                   ]
 
 -- |

@@ -156,7 +156,7 @@ renderDeclaration n exps (P.TypeClassDeclaration name args implies ds) = do
                       is -> "(" ++ intercalate ", " (map (\(pn, tys') -> show pn ++ " " ++ unwords (map P.prettyPrintTypeAtom tys')) is) ++ ") <= "
   atIndent n $ "class " ++ impliesText ++ P.runProperName name ++ " " ++ unwords args ++ " where"
   mapM_ (renderDeclaration (n + 2) exps) ds
-renderDeclaration n _ (P.TypeInstanceDeclaration name constraints className tys _) = do
+renderDeclaration n _ (P.TypeInstanceDeclaration _ name constraints className tys _) = do
   let constraintsText = case constraints of
                           [] -> ""
                           cs -> "(" ++ intercalate ", " (map (\(pn, tys') -> show pn ++ " " ++ unwords (map P.prettyPrintTypeAtom tys')) cs) ++ ") => "
@@ -180,7 +180,7 @@ getName (P.DataDeclaration _ name _ _) = P.runProperName name
 getName (P.ExternDataDeclaration name _) = P.runProperName name
 getName (P.TypeSynonymDeclaration name _ _) = P.runProperName name
 getName (P.TypeClassDeclaration name _ _ _) = P.runProperName name
-getName (P.TypeInstanceDeclaration name _ _ _ _) = show name
+getName (P.TypeInstanceDeclaration _ name _ _ _ _) = show name
 getName (P.PositionedDeclaration _ d) = getName d
 getName _ = error "Invalid argument to getName"
 

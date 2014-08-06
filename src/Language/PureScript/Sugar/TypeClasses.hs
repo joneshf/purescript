@@ -39,6 +39,8 @@ import Data.Maybe (catMaybes, mapMaybe, isJust)
 
 import qualified Data.Map as M
 
+import Debug.Trace
+
 type MemberMap = M.Map (ModuleName, ProperName) Declaration
 
 type Desugar = StateT MemberMap (SupplyT (Either ErrorStack))
@@ -52,7 +54,7 @@ desugarTypeClasses = flip evalStateT M.empty . mapM desugarModule
 
 desugarModule :: Module -> Desugar Module
 desugarModule (Module name decls (Just exps)) = do
-  (newExpss, declss) <- unzip <$> mapM (desugarDecl name exps) decls
+  (newExpss, declss) <- unzip <$> mapM (desugarDecl name exps decls) decls
   return $ Module name (concat declss) $ Just (exps ++ catMaybes newExpss)
 desugarModule _ = error "Exports should have been elaborated in name desugaring"
 
@@ -150,11 +152,33 @@ desugarModule _ = error "Exports should have been elaborated in name desugaring"
 --       return new Sub(fooString, "");
 --   };
 -}
-desugarDecl :: ModuleName -> [DeclarationRef] -> Declaration -> Desugar (Maybe DeclarationRef, [Declaration])
-desugarDecl mn _ d@(TypeClassDeclaration name args implies members) = do
+desugarDecl :: ModuleName -> [DeclarationRef] -> [Declaration] -> Declaration -> Desugar (Maybe DeclarationRef, [Declaration])
+desugarDecl mn _ _ d@(TypeClassDeclaration name args implies members) = do
   modify (M.insert (mn, name) d)
   return $ (Nothing, d : typeClassDictionaryDeclaration name args implies members : map (typeClassMemberToDictionaryAccessor mn name args) members)
-desugarDecl mn exps d@(TypeInstanceDeclaration name deps className tys members) = do
+desugarDecl mn exps decls (TypeInstanceDeclaration DerivedInstance name deps className tys@[TypeConstructor ty] _) = do
+  mems <- case find (matchesData (snd $ qualify mn ty)) decls of
+                Just (PositionedDeclaration _ (DataDeclaration Data _ _ ctors)) -> implementEq ctors
+                Just (DataDeclaration Data _ _ ctors) -> implementEq ctors
+                _ -> return [] -- error "Could not find data type: '" ++ show ty ++ "'. Note: orphan instances are not derivable."
+  desugarDecl mn exps decls (TypeInstanceDeclaration ManualInstance name deps className tys mems)
+  where
+  matchesData :: ProperName -> Declaration -> Bool
+  matchesData n (DataDeclaration Data n' _ _) = n == n'
+  matchesData n (PositionedDeclaration _ d) = matchesData n d
+  matchesData _ _ = False
+  qualifyCtor :: (ProperName, [Type]) -> (Qualified ProperName, [Type])
+  qualifyCtor (n, tys') = let Qualified m _ = ty in (Qualified m n, tys')
+  implementEq :: [(ProperName, [Type])] -> [Declaration]
+  implementEq ctors = (implementEqual . qualifyCtor <$> ctors) ++ (implementNotEqual . qualifyCtor <$> ctors)
+  implementEq [] = []
+  implementEq (ctor:ctors) = implementEqual (qualifyCtor ctor) : implementNotEqual (qualifyCtor ctor) : implementEq ctors
+  implementEqual :: (Qualified ProperName, [Type]) -> Declaration
+  implementEqual (n, []) = ValueDeclaration (Op (C.==)) Value [(ConstructorBinder n []), (ConstructorBinder n [])] Nothing (BooleanLiteral True)
+  implementNotEqual :: (Qualified ProperName, [Type]) -> Declaration
+  implementNotEqual (n, []) = ValueDeclaration (Op (C./=)) Value [(ConstructorBinder n []), (ConstructorBinder n [])] Nothing (BooleanLiteral False)
+desugarDecl mn exps _ d@(TypeInstanceDeclaration ManualInstance name deps className tys members) = do
+  trace ("\n\n\n\n\tmems:\n\n\n\n" ++ show members) (return ())
   desugared <- lift $ desugarCases members
   dictDecl <- typeInstanceDictionaryDeclaration name mn deps className tys desugared
   let expRef = if isExportedClass className && all isExportedType (getConstructors `concatMap` tys)
@@ -177,10 +201,10 @@ desugarDecl mn exps d@(TypeInstanceDeclaration name deps className tys members) 
   getConstructor :: Type -> [Qualified ProperName]
   getConstructor (TypeConstructor tcname) = [tcname]
   getConstructor _ = []
-desugarDecl mn exps (PositionedDeclaration pos d) = do
-  (dr, ds) <- rethrowWithPosition pos $ desugarDecl mn exps d
+desugarDecl mn exps decls (PositionedDeclaration pos d) = do
+  (dr, ds) <- rethrowWithPosition pos $ desugarDecl mn exps decls d
   return (dr, map (PositionedDeclaration pos) ds)
-desugarDecl _ _ other = return (Nothing, [other])
+desugarDecl _ _ _ other = return (Nothing, [other])
 
 memberToNameAndType :: Declaration -> (Ident, Type)
 memberToNameAndType (TypeDeclaration ident ty) = (ident, ty)

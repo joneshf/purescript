@@ -201,7 +201,8 @@ typeCheckAll mainModuleName moduleName (d@(TypeClassDeclaration pn args implies 
   addTypeClass moduleName pn args implies tys
   ds <- typeCheckAll mainModuleName moduleName rest
   return $ d : ds
-typeCheckAll mainModuleName moduleName (TypeInstanceDeclaration dictName deps className tys _ : rest) = do
+typeCheckAll _ _ (TypeInstanceDeclaration DerivedInstance dictName _ _ _ _ : _) = error $ "Derived instance not desugared: " ++ show dictName
+typeCheckAll mainModuleName moduleName (TypeInstanceDeclaration _ dictName deps className tys _ : rest) = do
   typeCheckAll mainModuleName moduleName (ExternInstanceDeclaration dictName deps className tys : rest)
 typeCheckAll mainModuleName moduleName (d@(ExternInstanceDeclaration dictName deps className tys) : rest) = do
   mapM_ (checkTypeClassInstance moduleName) tys
