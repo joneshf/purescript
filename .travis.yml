@@ -19,4 +19,7 @@ deploy:
   skip_cleanup: true
   on:
     all_branches: true
+    repo: joneshf/purescript
     tags: true
+  api_key:
+    secure: $GITHUB_RELEASES_TOKEN
