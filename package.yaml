@@ -16,7 +16,7 @@ license: BSD3
 github: purescript/purescript
 homepage: http://www.purescript.org/
 extra-source-files:
-  - examples/**/*.js
+  - examples/**/*.erl
   - examples/**/*.purs
   - examples/**/*.json
   - app/static/*
@@ -24,7 +24,7 @@ extra-source-files:
   - tests/support/setup-win.cmd
   - tests/support/psci/*.purs
   - tests/support/pscide/src/*.purs
-  - tests/support/pscide/src/*.js
+  - tests/support/pscide/src/*.erl
   - tests/support/pscide/src/*.fail
   - stack.yaml
   - README.md

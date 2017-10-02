@@ -8,9 +8,7 @@ module Main (main) where
 import Prelude ()
 import Prelude.Compat
 
-import qualified TestCompiler
 import qualified TestDocs
-import qualified TestPsci
 import qualified TestPscIde
 import qualified TestPscPublish
 import qualified TestPrimDocs
@@ -25,15 +23,17 @@ main = do
 
   heading "Updating support code"
   TestUtils.updateSupportCode
-  heading "Main compiler test suite"
-  TestCompiler.main
+  -- TODO
+  -- heading "Main compiler test suite"
+  -- TestCompiler.main
   heading "Documentation test suite"
   TestDocs.main
   TestPrimDocs.main
   heading "psc-publish test suite"
   TestPscPublish.main
-  heading "psci test suite"
-  TestPsci.main
+  -- TODO
+  -- heading "psci test suite"
+  -- TestPsci.main
   heading "psc-ide test suite"
   TestPscIde.main
 
