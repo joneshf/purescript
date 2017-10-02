@@ -17,10 +17,8 @@ import System.Process
 import System.Directory
 import System.Info
 import System.IO.UTF8 (readUTF8FileT)
-import System.Exit (exitFailure)
 import System.FilePath ((</>))
 import qualified System.FilePath.Glob as Glob
-import System.IO (stderr, hPutStrLn)
 
 findNodeProcess :: IO (Maybe String)
 findNodeProcess = runMaybeT . msum $ map (MaybeT . findExecutable) names
@@ -38,21 +36,8 @@ findNodeProcess = runMaybeT . msum $ map (MaybeT . findExecutable) names
 updateSupportCode :: IO ()
 updateSupportCode = do
   setCurrentDirectory "tests/support"
-  if System.Info.os == "mingw32"
-    then callProcess "setup-win.cmd" []
-    else do
-      callProcess "npm" ["install"]
-      -- bower uses shebang "/usr/bin/env node", but we might have nodejs
-      node <- maybe cannotFindNode pure =<< findNodeProcess
-      -- Sometimes we run as a root (e.g. in simple docker containers)
-      -- And we are non-interactive: https://github.com/bower/bower/issues/1162
-      callProcess node ["node_modules/.bin/bower", "--allow-root", "install", "--config.interactive=false"]
+  callProcess "psc-package" ["update"]
   setCurrentDirectory "../.."
-  where
-  cannotFindNode :: IO a
-  cannotFindNode = do
-    hPutStrLn stderr "Cannot find node (or nodejs) executable"
-    exitFailure
 
 readInput :: [FilePath] -> IO [(FilePath, T.Text)]
 readInput inputFiles = forM inputFiles $ \inputFile -> do

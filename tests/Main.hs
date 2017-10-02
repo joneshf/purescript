@@ -10,7 +10,6 @@ import Prelude.Compat
 
 import qualified TestDocs
 import qualified TestPscIde
-import qualified TestPscPublish
 import qualified TestPrimDocs
 import qualified TestUtils
 
@@ -29,8 +28,9 @@ main = do
   heading "Documentation test suite"
   TestDocs.main
   TestPrimDocs.main
-  heading "psc-publish test suite"
-  TestPscPublish.main
+  -- TODO
+  -- heading "psc-publish test suite"
+  -- TestPscPublish.main
   -- TODO
   -- heading "psci test suite"
   -- TestPsci.main
