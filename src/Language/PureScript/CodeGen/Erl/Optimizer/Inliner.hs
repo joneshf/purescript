@@ -70,11 +70,11 @@ evaluateIifes :: Erl -> Erl
 evaluateIifes = id
   -- TODO: Re-enable this when proper occurs check is added
   -- everywhereOnErl convert
-  where
-  convert :: Erl -> Erl
-  -- TODO: check var does not occur in fun
-  convert (EFun Nothing x (EApp fun@EFunFull{} [EVar x'])) | x == x' = fun
-  convert e = e
+  -- where
+  -- convert :: Erl -> Erl
+  -- -- TODO: check var does not occur in fun
+  -- convert (EFun Nothing x (EApp fun@EFunFull{} [EVar x'])) | x == x' = fun
+  -- convert e = e
 -- inlineVariables :: JS -> JS
 -- inlineVariables = everywhereOnJS $ removeFromBlock go
 --   where
@@ -293,8 +293,8 @@ ringInt = (EC.dataRing, C.ringInt)
 euclideanRingNumber :: (Text, Text)
 euclideanRingNumber = (EC.dataEuclideanRing, C.euclideanRingNumber)
 
-euclideanRingInt :: (Text, Text)
-euclideanRingInt = (EC.dataEuclideanRing, C.euclideanRingInt)
+-- euclideanRingInt :: (Text, Text)
+-- euclideanRingInt = (EC.dataEuclideanRing, C.euclideanRingInt)
 
 eqNumber :: (Text, Text)
 eqNumber = (EC.dataEq, C.eqNumber)
@@ -326,17 +326,17 @@ ordString = (EC.dataOrd, C.ordString)
 ordChar :: (Text, Text)
 ordChar = (EC.dataOrd, C.ordChar)
 
-semigroupString :: (Text, Text)
-semigroupString = (EC.dataSemigroup, C.semigroupString)
+-- semigroupString :: (Text, Text)
+-- semigroupString = (EC.dataSemigroup, C.semigroupString)
 
-boundedBoolean :: (Text, Text)
-boundedBoolean = (EC.dataBounded, C.boundedBoolean)
+-- boundedBoolean :: (Text, Text)
+-- boundedBoolean = (EC.dataBounded, C.boundedBoolean)
 
 heytingAlgebraBoolean :: (Text, Text)
 heytingAlgebraBoolean = (EC.dataHeytingAlgebra, C.heytingAlgebraBoolean)
 
-semigroupoidFn :: (Text, Text)
-semigroupoidFn = (EC.controlSemigroupoid, C.semigroupoidFn)
+-- semigroupoidFn :: (Text, Text)
+-- semigroupoidFn = (EC.controlSemigroupoid, C.semigroupoidFn)
 
 opAdd :: (Text, Text)
 opAdd = (EC.dataSemiring, C.add)
@@ -362,8 +362,8 @@ opGreaterThan = (EC.dataOrd, C.greaterThan)
 opGreaterThanOrEq :: (Text, Text)
 opGreaterThanOrEq = (EC.dataOrd, C.greaterThanOrEq)
 
-opAppend :: (Text, Text)
-opAppend = (EC.dataSemigroup, C.append)
+-- opAppend :: (Text, Text)
+-- opAppend = (EC.dataSemigroup, C.append)
 
 opSub :: (Text, Text)
 opSub = (EC.dataRing, C.sub)
@@ -374,8 +374,8 @@ opNegate = (EC.dataRing, C.negate)
 opDiv :: (Text, Text)
 opDiv = (EC.dataEuclideanRing, C.div)
 
-opMod :: (Text, Text)
-opMod = (EC.dataEuclideanRing, C.mod)
+-- opMod :: (Text, Text)
+-- opMod = (EC.dataEuclideanRing, C.mod)
 
 opConj :: (Text, Text)
 opConj = (EC.dataHeytingAlgebra, C.conj)

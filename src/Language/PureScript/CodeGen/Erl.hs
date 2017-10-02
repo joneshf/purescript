@@ -37,8 +37,6 @@ import Language.PureScript.Traversals (sndM)
 import Language.PureScript.CodeGen.Erl.Common
 import Language.PureScript.CodeGen.Erl.Optimizer
 
-import Debug.Trace
-
 freshNameErl :: (MonadSupply m) => m T.Text
 freshNameErl = fmap (("_@" <>) . T.pack . show) fresh
 
@@ -85,14 +83,14 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
   findAttributes :: [Bind Ann] -> [Erl]
   findAttributes expr = map (uncurry EAttribute) $ mapMaybe getAttribute $ concatMap onBind expr
     where
-      getAttribute (TypeApp (TypeApp (TypeConstructor (Qualified (Just mn) (ProperName "Attribute"))) (TypeLevelString a)) (TypeLevelString b))
+      getAttribute (TypeApp (TypeApp (TypeConstructor (Qualified (Just _) (ProperName "Attribute"))) (TypeLevelString a)) (TypeLevelString b))
         = Just (a,b)
       getAttribute _ = Nothing
 
       getType ident = (\(t, _, _) -> t) <$> M.lookup (Qualified (Just mn) ident) (E.names env)
 
       onRecBind ((_, ident), _) = getType ident
-      onBind (NonRec _ ident val) = mapMaybe id [ getType ident ]
+      onBind (NonRec _ ident _) = mapMaybe id [ getType ident ]
       onBind (Rec vals) = mapMaybe onRecBind vals
 
   biconcat :: [([a], [b])] -> ([a], [b])
@@ -160,7 +158,7 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
   curriedName x = x
 
   bindToErl :: Bind Ann -> m [Erl]
-  bindToErl (NonRec ann ident val) =
+  bindToErl (NonRec _ ident val) =
     pure <$> EVarBind (identToVar ident) <$> valueToErl' (Just ident) val
   -- bindToErl (Rec [((ann, ident), val)]) =
   --   pure <$> EVarBind (identToVar ident) <$> valueToErl' (Just ident) val
@@ -230,7 +228,7 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
       Var (_, _, _, Just IsTypeClassConstructor) name ->
         return $ curriedApp args' $ EApp (EAtomLiteral $ qualifiedToTypeclassCtor name) []
 
-      Var _ qi@(Qualified q ident)
+      Var _ qi@(Qualified _ _)
         | arity <- fromMaybe 0 (M.lookup qi arities)
         , length args == arity
         -> return $ EApp (EAtomLiteral (uncurriedName $ qualifiedToErl qi)) args'
@@ -291,7 +289,6 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
   bindersToErl vals cases = do
     res <- mapM caseToErl cases
     let arrayVars = map fst $ concatMap (\(_,_,x) -> x) res
-        arrayMatches = map (\(_,_,x) -> x) res
         convBinder (count, binds) (_, binders, arrayMatches) =
           (count + length arrayMatches, binds ++ map go binders)
           where

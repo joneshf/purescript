@@ -9,15 +9,12 @@ module Language.PureScript.CodeGen.Erl.Optimizer (optimize) where
 
 import Prelude.Compat
 
-import Control.Monad.Reader (MonadReader, ask, asks)
 import Control.Monad.Supply.Class (MonadSupply)
 
 import Language.PureScript.CodeGen.Erl.AST
-import Language.PureScript.Options
 import Language.PureScript.CodeGen.Erl.Optimizer.MagicDo
 import Language.PureScript.CodeGen.Erl.Optimizer.Blocks
 import Language.PureScript.CodeGen.Erl.Optimizer.Common
-import Language.PureScript.CodeGen.Erl.Optimizer.Unused
 import Language.PureScript.CodeGen.Erl.Optimizer.Inliner
 import Language.PureScript.CodeGen.Erl.Optimizer.Guards
 

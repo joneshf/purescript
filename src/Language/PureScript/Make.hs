@@ -36,8 +36,6 @@ import           Control.Monad.Trans.Control (MonadBaseControl(..))
 import           Control.Monad.Trans.Except
 import           Control.Monad.Writer.Class (MonadWriter(..))
 import           Data.Aeson (encode, decode)
-import qualified Data.Aeson as Aeson
-import           Data.Either (partitionEithers)
 import           Data.Function (on)
 import           Data.Foldable (for_)
 import           Data.List (foldl', sortBy, groupBy)
@@ -47,7 +45,6 @@ import           Data.Time.Clock
 import           Data.Traversable (for)
 import           Data.Version (showVersion)
 import qualified Data.ByteString.Lazy as B
-import qualified Data.ByteString.UTF8 as BU8
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -61,31 +58,20 @@ import           Language.PureScript.Linter
 import           Language.PureScript.ModuleDependencies
 import           Language.PureScript.Names
 import           Language.PureScript.Options
-import           Language.PureScript.Pretty.Common (SMap(..))
 import           Language.PureScript.Pretty.Erl
 import           Language.PureScript.Renamer
 import           Language.PureScript.Sugar
 import           Language.PureScript.TypeChecker
-import qualified Language.JavaScript.Parser as JS
-import qualified Language.PureScript.Bundle as Bundle
 
 import qualified Language.PureScript.CodeGen.Erl as E
 import Language.PureScript.CodeGen.Erl.Common (atomModuleName, ModuleType(..))
 import Language.PureScript.Parser.Erl
 
-import qualified Language.PureScript.CodeGen.JS as J
-import           Language.PureScript.CodeGen.JS.Printer
 import qualified Language.PureScript.CoreFn as CF
-import qualified Language.PureScript.CoreFn.ToJSON as CFJ
-import qualified Language.PureScript.CoreImp.AST as Imp
-import qualified Language.PureScript.Parser as PSParser
 import qualified Paths_purescript as Paths
-import           SourceMap
-import           SourceMap.Types
-import           System.Directory (doesFileExist, getModificationTime, createDirectoryIfMissing, getCurrentDirectory)
-import           System.FilePath ((</>), takeDirectory, makeRelative, splitPath, normalise, replaceExtension)
+import           System.Directory (doesFileExist, getModificationTime, createDirectoryIfMissing)
+import           System.FilePath ((</>), takeDirectory, replaceExtension)
 import           System.IO.Error (tryIOError)
-import qualified Text.Parsec as Parsec
 
 -- | Progress messages from the make process
 data ProgressMessage
@@ -344,23 +330,16 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
 
   getOutputTimestamp :: ModuleName -> Make (Maybe UTCTime)
   getOutputTimestamp mn = do
+    dumpCoreFn <- asks optionsDumpCoreFn
     let filePath = T.unpack $ runModuleName mn
         outputName = T.unpack $ atomModuleName mn PureScriptModule <> ".erl"
         erlFile = outputDir </> filePath </> outputName
-        externsFile = outputDir </> filePath </> "externs.json"
-    min <$> getTimestamp erlFile <*> getTimestamp externsFile
-
-  getOutputTimestampJS :: ModuleName -> Make (Maybe UTCTime)
-  getOutputTimestampJS mn = do
-    dumpCoreFn <- asks optionsDumpCoreFn
-    let filePath = T.unpack (runModuleName mn)
-        jsFile = outputDir </> filePath </> "index.js"
         externsFile = outputDir </> filePath </> "externs.json"
         coreFnFile = outputDir </> filePath </> "corefn.json"
         min3 js exts coreFn
           | dumpCoreFn = min (min js exts) coreFn
           | otherwise = min js exts
-    min3 <$> getTimestamp jsFile <*> getTimestamp externsFile <*> getTimestamp coreFnFile
+    min3 <$> getTimestamp erlFile <*> getTimestamp externsFile <*> getTimestamp coreFnFile
 
   readExterns :: ModuleName -> Make (FilePath, Externs)
   readExterns mn = do
@@ -407,67 +386,6 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     text <- TE.decodeUtf8 . B.toStrict <$> readTextFile path
     pure $ either (const []) id $ parseFile path text
 
-  codegenJS :: CF.Module CF.Ann -> Environment -> Externs -> SupplyT Make ()
-  codegenJS m _ exts = do
-    let mn = CF.moduleName m
-    foreignInclude <- case mn `M.lookup` foreigns of
-      Just path
-        | not $ requiresForeign m -> do
-            tell $ errorMessage $ UnnecessaryFFIModule mn path
-            return Nothing
-        | otherwise -> do
-            checkForeignDecls m path
-            return $ Just $ Imp.App Nothing (Imp.Var Nothing "require") [Imp.StringLiteral Nothing "./foreign"]
-      Nothing | requiresForeign m -> throwError . errorMessage $ MissingFFIModule mn
-              | otherwise -> return Nothing
-    rawJs <- J.moduleToJs m foreignInclude
-    dir <- lift $ makeIO (const (ErrorMessage [] $ CannotGetFileInfo ".")) getCurrentDirectory
-    sourceMaps <- lift $ asks optionsSourceMaps
-    let (pjs, mappings) = if sourceMaps then prettyPrintJSWithSourceMaps rawJs else (prettyPrintJS rawJs, [])
-    let filePath = T.unpack (runModuleName mn)
-        jsFile = outputDir </> filePath </> "index.js"
-        mapFile = outputDir </> filePath </> "index.js.map"
-        externsFile = outputDir </> filePath </> "externs.json"
-        foreignFile = outputDir </> filePath </> "foreign.js"
-        prefix = ["Generated by purs version " <> T.pack (showVersion Paths.version) | usePrefix]
-        js = T.unlines $ map ("// " <>) prefix ++ [pjs]
-        mapRef = if sourceMaps then "//# sourceMappingURL=index.js.map\n" else ""
-    lift $ do
-      writeTextFile jsFile (B.fromStrict $ TE.encodeUtf8 $ js <> mapRef)
-      for_ (mn `M.lookup` foreigns) (readTextFile >=> writeTextFile foreignFile)
-      writeTextFile externsFile exts
-    lift $ when sourceMaps $ genSourceMap dir mapFile (length prefix) mappings
-    dumpCoreFn <- lift $ asks optionsDumpCoreFn
-    when dumpCoreFn $ do
-      let coreFnFile = outputDir </> filePath </> "corefn.json"
-      let jsonPayload = CFJ.moduleToJSON Paths.version m
-      let json = Aeson.object [  (runModuleName mn, jsonPayload) ]
-      lift $ writeTextFile coreFnFile (encode json)
-
-  genSourceMap :: String -> String -> Int -> [SMap] -> Make ()
-  genSourceMap dir mapFile extraLines mappings = do
-    let pathToDir = iterate (".." </>) ".." !! length (splitPath $ normalise outputDir)
-        sourceFile = case mappings of
-                      (SMap file _ _ : _) -> Just $ pathToDir </> makeRelative dir (T.unpack file)
-                      _ -> Nothing
-    let rawMapping = SourceMapping { smFile = "index.js", smSourceRoot = Nothing, smMappings =
-      map (\(SMap _ orig gen) -> Mapping {
-          mapOriginal = Just $ convertPos $ add 0 (-1) orig
-        , mapSourceFile = sourceFile
-        , mapGenerated = convertPos $ add (extraLines+1) 0 gen
-        , mapName = Nothing
-        }) mappings
-    }
-    let mapping = generate rawMapping
-    writeTextFile mapFile (encode mapping)
-    where
-    add :: Int -> Int -> SourcePos -> SourcePos
-    add n m (SourcePos n' m') = SourcePos (n+n') (m+m')
-
-    convertPos :: SourcePos -> Pos
-    convertPos SourcePos { sourcePosLine = l, sourcePosColumn = c } =
-      Pos { posLine = fromIntegral l, posColumn = fromIntegral c }
-
   requiresForeign :: CF.Module a -> Bool
   requiresForeign = not . null . CF.moduleForeign
 
@@ -486,57 +404,3 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
 
   progress :: ProgressMessage -> Make ()
   progress = liftIO . putStrLn . renderProgressMessage
-
--- | Check that the declarations in a given PureScript module match with those
--- in its corresponding foreign module.
-checkForeignDecls :: CF.Module ann -> FilePath -> SupplyT Make ()
-checkForeignDecls m path = do
-  jsStr <- lift $ readTextFile path
-  js <- either (errorParsingModule . Bundle.UnableToParseModule) pure $ JS.parse (BU8.toString (B.toStrict jsStr)) path
-
-  foreignIdentsStrs <- either errorParsingModule pure $ getExps js
-  foreignIdents <- either
-                     errorInvalidForeignIdentifiers
-                     (pure . S.fromList)
-                     (parseIdents foreignIdentsStrs)
-  let importedIdents = S.fromList $ map fst (CF.moduleForeign m)
-
-  let unusedFFI = foreignIdents S.\\ importedIdents
-  unless (null unusedFFI) $
-    tell . errorMessage . UnusedFFIImplementations mname $
-      S.toList unusedFFI
-
-  let missingFFI = importedIdents S.\\ foreignIdents
-  unless (null missingFFI) $
-    throwError . errorMessage . MissingFFIImplementations mname $
-      S.toList missingFFI
-
-  where
-  mname = CF.moduleName m
-
-  errorParsingModule :: Bundle.ErrorMessage -> SupplyT Make a
-  errorParsingModule = throwError . errorMessage . ErrorParsingFFIModule path . Just
-
-  getExps :: JS.JSAST -> Either Bundle.ErrorMessage [String]
-  getExps = Bundle.getExportedIdentifiers (T.unpack (runModuleName mname))
-
-  errorInvalidForeignIdentifiers :: [String] -> SupplyT Make a
-  errorInvalidForeignIdentifiers =
-    throwError . mconcat . map (errorMessage . InvalidFFIIdentifier mname . T.pack)
-
-  parseIdents :: [String] -> Either [String] [Ident]
-  parseIdents strs =
-    case partitionEithers (map parseIdent strs) of
-      ([], idents) ->
-        Right idents
-      (errs, _) ->
-        Left errs
-
-  -- We ignore the error message here, just being told it's an invalid
-  -- identifier should be enough.
-  parseIdent :: String -> Either String Ident
-  parseIdent str = try (T.pack str)
-    where
-    try s = either (const (Left str)) Right $ do
-      ts <- PSParser.lex "" s
-      PSParser.runTokenParser "" (PSParser.parseIdent <* Parsec.eof) ts

@@ -8,7 +8,6 @@ import Prelude.Compat
 
 import Language.PureScript.CodeGen.Erl.AST
 import Language.PureScript.CodeGen.Erl.Optimizer.Common
-import Language.PureScript.Options
 import qualified Language.PureScript.Constants as C
 import qualified Language.PureScript.CodeGen.Erl.Constants as EC
 
