@@ -1,8 +1,11 @@
 module Main where
 
-import Debug.Trace
+import Prelude
+import Control.Monad.Eff.Console (log)
 
-f x = x * 10
-g y = y - 10
+f x = x * 10.0
+g y = y - 10.0
 
-main = trace $ show $ (f <<< g) 100
+main = do
+  log $ show $ (f <<< g) 100.0
+  log "Done"

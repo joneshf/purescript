@@ -1,12 +1,11 @@
 module Main where
 
 import Prelude
+import Control.Monad.Eff
+import Control.Monad.Eff.Console
 
-class Partial
+head :: forall a. Partial => Array a -> a
+head [x] = x
 
-head :: forall a. (Partial) => [a] -> a
-head (x:xs) = x
-
-instance allowPartials :: Partial
-
-main = Debug.Trace.trace $ head ["Done"]
+main :: Eff _ _
+main = log "Done"

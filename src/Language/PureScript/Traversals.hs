@@ -1,20 +1,7 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.Traversals
--- Copyright   :  (c) 2014 Phil Freeman
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
 -- | Common functions for implementing generic traversals
---
------------------------------------------------------------------------------
-
 module Language.PureScript.Traversals where
 
-import Control.Applicative
+import Prelude.Compat
 
 fstM :: (Functor f) => (a -> f c) -> (a, b) -> f (c, b)
 fstM f (a, b) = flip (,) b <$> f a
@@ -38,4 +25,3 @@ eitherM _ g (Right b) = Right <$> g b
 
 defS :: (Monad m) => st -> val -> m (st, val)
 defS s val = return (s, val)
-

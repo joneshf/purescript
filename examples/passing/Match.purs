@@ -1,7 +1,10 @@
 module Main where
 
-  data Foo a = Foo
+import Prelude
+import Control.Monad.Eff.Console (log)
 
-  foo = \f -> case f of Foo -> "foo"
+data Foo a = Foo
 
-  main = Debug.Trace.trace "Done"
+foo = \f -> case f of Foo -> "foo"
+
+main = log "Done"

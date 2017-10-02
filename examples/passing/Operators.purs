@@ -1,102 +1,91 @@
 module Main where
 
-  import Control.Monad.Eff
-  import Debug.Trace
+import Prelude
+import Other (foo)
+import Other as Other
+import Control.Monad.Eff
+import Control.Monad.Eff.Console
 
-  (?!) :: forall a. a -> a -> a
-  (?!) x _ = x
+op1 :: forall a. a -> a -> a
+op1 x _ = x
 
-  bar :: String -> String -> String
-  bar = \s1 s2 -> s1 ++ s2
+infix 4 op1 as ?!
 
-  test1 :: forall n. (Num n) => n -> n -> (n -> n -> n) -> n
-  test1 x y z = x * y + z x y
+test1 :: forall n. Semiring n => n -> n -> (n -> n -> n) -> n
+test1 x y z = x * y + z x y
 
-  test2 = (\x -> x.foo false) { foo : \_ -> 1 }
+test2 = (\x -> x.foo false) { foo : \_ -> 1.0 }
 
-  test3 = (\x y -> x)(1 + 2 * (1 + 2)) (true && (false || false))
+test3 = (\x y -> x)(1.0 + 2.0 * (1.0 + 2.0)) (true && (false || false))
 
-  k = \x -> \y -> x
+k = \x -> \y -> x
 
-  test4 = 1 `k` 2
+test4 = 1 `k` 2
 
-  infixl 5 %%
+op2 :: Number -> Number -> Number
+op2 x y = x * y + y
 
-  (%%) :: Number -> Number -> Number
-  (%%) x y = x * y + y
+infixl 5 op2 as %%
 
-  test5 = 1 %% 2 %% 3
+test5 = 1.0 %% 2.0 %% 3.0
 
-  test6 = ((\x -> x) `k` 2) 3
+test6 = ((\x -> x) `k` 2.0) 3.0
 
-  (<+>) :: String -> String -> String
-  (<+>) = \s1 s2 -> s1 ++ s2
+op3 :: String -> String -> String
+op3 = \s1 s2 -> s1 <> s2
 
-  test7 = "Hello" <+> "World!"
+infix 4 op3 as <+>
 
-  (@@) :: forall a b. (a -> b) -> a -> b
-  (@@) = \f x -> f x
+test7 = "Hello" <+> "World!"
 
-  foo :: String -> String
-  foo = \s -> s
+op4 :: forall a b. (a -> b) -> a -> b
+op4 = \f x -> f x
 
-  test8 = foo @@ "Hello World"
+infix 4 op4 as @@
 
-  test9 = Main.foo @@ "Hello World"
+test8 = foo @@ "Hello World"
 
-  test10 = "Hello" `Main.bar` "World"
+test9 = Other.foo @@ "Hello World"
 
-  (...) :: forall a. [a] -> [a] -> [a]
-  (...) = \as -> \bs -> as
+test10 = "Hello" `Other.baz` "World"
 
-  test11 = [1, 2, 3] ... [4, 5, 6]
+op5 :: forall a. Array a -> Array a -> Array a
+op5 = \as -> \bs -> as
 
-  test12 (<%>) a b = a <%> b
+infix 4 op5 as ...
 
-  test13 = \(<%>) a b -> a <%> b
+test11 = [1.0, 2.0, 0.0] ... [4.0, 5.0, 6.0]
 
-  test14 :: Number -> Number -> Boolean
-  test14 a b = a < b
+test14 :: Number -> Number -> Boolean
+test14 a b = a < b
 
-  test15 :: Number -> Number -> Boolean
-  test15 a b = const false $ a `test14` b
+test15 :: Number -> Number -> Boolean
+test15 a b = const false $ a `test14` b
 
-  test16 :: Number -> Number -> Number
-  test16 x y = x .|. y .&. y
+test17 :: Number
+test17 = negate (-1.0)
 
-  test17 :: Number
-  test17 = negate (-1)
+test18 :: Number
+test18 = negate $ negate 1.0
 
-  test18 :: Number
-  test18 = negate $ negate 1
+test19 :: Number
+test19 = negate $ negate (-1.0)
 
-  test19 :: Number
-  test19 = negate $ negate (-1)
-
-  test20 :: Number
-  test20 = 1 @ 2
-    where
-    (@) x y = x + y * y
-
-  main = do
-    let t1 = test1 1 2 (\x y -> x + y)
-    let t2 = test2
-    let t3 = test3
-    let t4 = test4
-    let t5 = test5
-    let t6 = test6
-    let t7 = test7
-    let t8 = test8
-    let t9 = test9
-    let t10 = test10
-    let t11 = test11
-    let t12 = test12 k 1 2
-    let t13 = test13 k 1 2
-    let t14 = test14 1 2
-    let t15 = test15 1 2
-    let t16 = test16 1 2
-    let t17 = test17
-    let t18 = test18
-    let t19 = test19
-    let t20 = test20
-    trace "Done"
+main = do
+  let t1 = test1 1.0 2.0 (\x y -> x + y)
+  let t2 = test2
+  let t3 = test3
+  let t4 = test4
+  let t5 = test5
+  let t6 = test6
+  let t7 = test7
+  let t8 = test8
+  let t9 = test9
+  let t10 = test10
+  let t11 = test11
+  let t14 = test14 1.0 2.0
+  let t15 = test15 1.0 2.0
+  let t17 = test17
+  let t18 = test18
+  let t19 = test19
+  log "Done"

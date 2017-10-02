@@ -1,69 +1,71 @@
 module Main where
 
 import Prelude
+import Control.Monad.Eff.Console (log)
 
 test1 = \_ -> show "testing"
 
-f :: forall a. (Prelude.Show a) => a -> String
+f :: forall a. Show a => a -> String
 f x = show x
 
 test2 = \_ -> f "testing"
 
-test7 :: forall a. (Prelude.Show a) => a -> String
+test7 :: forall a. Show a => a -> String
 test7 = show
 
 test8 = \_ -> show $ "testing"
 
 data Data a = Data a
 
-instance showData :: (Prelude.Show a) => Prelude.Show (Data a) where
-  show (Data a) = "Data (" ++ show a ++ ")"
+instance showData :: Show a => Show (Data a) where
+  show (Data a) = "Data (" <> show a <> ")"
 
 test3 = \_ -> show (Data "testing")
 
 instance functorData :: Functor Data where
-  (<$>) = liftM1
+  map = liftM1
 
 instance applyData :: Apply Data where
-  (<*>) = ap
+  apply = ap
 
 instance applicativeData :: Applicative Data where
   pure = Data
 
 instance bindData :: Bind Data where
-  (>>=) (Data a) f = f a
+  bind (Data a) f = f a
 
 instance monadData :: Monad Data
 
 data Maybe a = Nothing | Just a
 
 instance functorMaybe :: Functor Maybe where
-  (<$>) = liftM1
+  map = liftM1
 
 instance applyMaybe :: Apply Maybe where
-  (<*>) = ap
+  apply = ap
 
 instance applicativeMaybe :: Applicative Maybe where
   pure = Just
 
 instance bindMaybe :: Bind Maybe where
-  (>>=) Nothing _ = Nothing
-  (>>=) (Just a) f = f a
+  bind Nothing _ = Nothing
+  bind (Just a) f = f a
 
 instance monadMaybe :: Monad Maybe
 
-test4 :: forall a m. (Monad m) => a -> m Number
-test4 = \_ -> return 1
+test4 :: forall a m. Monad m => a -> m Number
+test4 = \_ -> pure 1.0
 
-test5 = \_ -> Just 1 >>= \n -> return (n + 1)
+test5 = \_ -> Just 1.0 >>= \n -> pure (n + 1.0)
 
 ask r = r
 
 runReader r f = f r
 
-test9 _ = runReader 0 $ do
+test9 _ = runReader 0.0 $ do
   n <- ask
-  return $ n + 1
+  pure $ n + 1.0
 
-main = Debug.Trace.trace (test7 "Done")
-
+main = do
+  log (test7 "Hello")
+  log "Done"

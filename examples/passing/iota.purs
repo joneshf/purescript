@@ -1,9 +1,11 @@
 module Main where
 
-  s = \x -> \y -> \z -> x z (y z)
+import Control.Monad.Eff.Console (log)
 
-  k = \x -> \y -> x
+s = \x -> \y -> \z -> x z (y z)
 
-  iota = \x -> x s k
+k = \x -> \y -> x
 
-  main = Debug.Trace.trace "Done"
+iota = \x -> x s k
+
+main = log "Done"

@@ -1,111 +1,62 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.TypeChecker.Synonyms
--- Copyright   :  (c) Phil Freeman 2013
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
+{-# LANGUAGE GADTs #-}
+
 -- |
--- Functions for replacing fully applied type synonyms with the @SaturatedTypeSynonym@ data constructor
+-- Functions for replacing fully applied type synonyms
 --
------------------------------------------------------------------------------
+module Language.PureScript.TypeChecker.Synonyms
+  ( SynonymMap
+  , replaceAllTypeSynonyms
+  , replaceAllTypeSynonymsM
+  ) where
 
-{-# LANGUAGE FlexibleContexts, MultiParamTypeClasses, GADTs #-}
+import           Prelude.Compat
 
-module Language.PureScript.TypeChecker.Synonyms (
-    saturateAllTypeSynonyms,
-    desaturateAllTypeSynonyms,
-    replaceAllTypeSynonyms,
-    expandAllTypeSynonyms,
-    expandTypeSynonym,
-    expandTypeSynonym'
-) where
-
-import Data.Maybe (fromMaybe)
+import           Control.Monad.Error.Class (MonadError(..))
+import           Control.Monad.State
+import           Data.Maybe (fromMaybe)
 import qualified Data.Map as M
+import           Data.Text (Text)
+import           Language.PureScript.Environment
+import           Language.PureScript.Errors
+import           Language.PureScript.Kinds
+import           Language.PureScript.Names
+import           Language.PureScript.TypeChecker.Monad
+import           Language.PureScript.Types
 
-import Control.Applicative
-import Control.Monad.Except
-import Control.Monad.State
+-- | Type synonym information (arguments with kinds, aliased type), indexed by name
+type SynonymMap = M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe Kind)], Type)
 
-import Language.PureScript.Environment
-import Language.PureScript.Errors
-import Language.PureScript.Names
-import Language.PureScript.TypeChecker.Monad
-import Language.PureScript.Types
-
--- |
--- Build a type substitution for a type synonym
---
-buildTypeSubstitution :: Qualified ProperName -> Int -> Type -> Either String (Maybe Type)
-buildTypeSubstitution name n = go n []
+replaceAllTypeSynonyms'
+  :: SynonymMap
+  -> Type
+  -> Either MultipleErrors Type
+replaceAllTypeSynonyms' syns = everywhereOnTypesTopDownM try
   where
-  go :: Int -> [Type] -> Type -> Either String (Maybe Type)
-  go 0 args (TypeConstructor ctor) | name == ctor = return (Just $ SaturatedTypeSynonym ctor args)
-  go m _ (TypeConstructor ctor) | m > 0 && name == ctor = throwError $ "Partially applied type synonym " ++ show name
-  go m args (TypeApp f arg) = go (m - 1) (arg:args) f
+  try :: Type -> Either MultipleErrors Type
+  try t = fromMaybe t <$> go 0 [] t
+
+  go :: Int -> [Type] -> Type -> Either MultipleErrors (Maybe Type)
+  go c args (TypeConstructor ctor)
+    | Just (synArgs, body) <- M.lookup ctor syns
+    , c == length synArgs
+    = let repl = replaceAllTypeVars (zip (map fst synArgs) args) body
+      in Just <$> try repl
+    | Just (synArgs, _) <- M.lookup ctor syns
+    , length synArgs > c
+    = throwError . errorMessage $ PartiallyAppliedSynonym ctor
+  go c args (TypeApp f arg) = go (c + 1) (arg : args) f
   go _ _ _ = return Nothing
 
--- |
--- Replace all instances of a specific type synonym with the @SaturatedTypeSynonym@ data constructor
---
-saturateTypeSynonym :: Qualified ProperName -> Int -> Type -> Either String Type
-saturateTypeSynonym name n = everywhereOnTypesTopDownM replace
-  where
-  replace t = fromMaybe t <$> buildTypeSubstitution name n t
-
--- |
--- Replace all type synonyms with the @SaturatedTypeSynonym@ data constructor
---
-saturateAllTypeSynonyms :: [(Qualified ProperName, Int)] -> Type -> Either String Type
-saturateAllTypeSynonyms syns d = foldM (\result (name, n) -> saturateTypeSynonym name n result) d syns
-
--- |
--- \"Desaturate\" @SaturatedTypeSynonym@s
---
-desaturateAllTypeSynonyms :: Type -> Type
-desaturateAllTypeSynonyms = everywhereOnTypes replaceSaturatedTypeSynonym
-  where
-  replaceSaturatedTypeSynonym (SaturatedTypeSynonym name args) = foldl TypeApp (TypeConstructor name) args
-  replaceSaturatedTypeSynonym t = t
-
--- |
--- Replace fully applied type synonyms with the @SaturatedTypeSynonym@ data constructor, which helps generate
--- better error messages during unification.
---
-replaceAllTypeSynonyms' :: Environment -> Type -> Either String Type
-replaceAllTypeSynonyms' env d =
-  let
-    syns = map (\(name, (args, _)) -> (name, length args)) . M.toList $ typeSynonyms env
-  in
-    saturateAllTypeSynonyms syns d
-
-replaceAllTypeSynonyms :: (e ~ ErrorStack, Functor m, Monad m, MonadState CheckState m, MonadError e m) => Type -> m Type
+-- | Replace fully applied type synonyms
+replaceAllTypeSynonyms :: (e ~ MultipleErrors, MonadState CheckState m, MonadError e m) => Type -> m Type
 replaceAllTypeSynonyms d = do
   env <- getEnv
-  either (throwError . strMsg) return $ replaceAllTypeSynonyms' env d
+  either throwError return $ replaceAllTypeSynonyms' (typeSynonyms env) d
 
--- |
--- Replace a type synonym and its arguments with the aliased type
---
-expandTypeSynonym' :: Environment -> Qualified ProperName -> [Type] -> Either String Type
-expandTypeSynonym' env name args =
-  case M.lookup name (typeSynonyms env) of
-    Just (synArgs, body) -> do
-      let repl = replaceAllTypeVars (zip (map fst synArgs) args) body
-      replaceAllTypeSynonyms' env repl
-    Nothing -> error "Type synonym was not defined"
-
-expandTypeSynonym :: (e ~ ErrorStack, Functor m, Monad m, MonadState CheckState m, MonadError e m) => Qualified ProperName -> [Type] -> m Type
-expandTypeSynonym name args = do
-  env <- getEnv
-  either (throwError . strMsg) return $ expandTypeSynonym' env name args
-
-expandAllTypeSynonyms :: (e ~ ErrorStack, Functor m, Applicative m, Monad m, MonadState CheckState m, MonadError e m) => Type -> m Type
-expandAllTypeSynonyms = everywhereOnTypesTopDownM go
-  where
-  go (SaturatedTypeSynonym name args) = expandTypeSynonym name args
-  go other = return other
+-- | Replace fully applied type synonyms by explicitly providing a 'SynonymMap'.
+replaceAllTypeSynonymsM
+  :: MonadError MultipleErrors m
+  => SynonymMap
+  -> Type
+  -> m Type
+replaceAllTypeSynonymsM syns = either throwError pure . replaceAllTypeSynonyms' syns

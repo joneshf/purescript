@@ -1,19 +1,13 @@
 module Main where
 
-  import Prelude
+import Prelude
+import Test.Assert
+import Control.Monad.Eff.Console (log)
 
-  test :: forall a b. a -> b -> a
-  test = \const _ -> const
+test :: forall a b. a -> b -> a
+test = \const _ -> const
 
-  foreign import error
-    """
-    function error(msg) {
-      throw msg;
-    }
-    """ :: forall a. String -> a
-
-  main = do
-    let value = test "Done" {}
-    if value == "Done"
-      then Debug.Trace.trace "Done"
-      else error "Not done"
+main = do
+  let value = test "Done" {}
+  assert' "Not done" $ value == "Done"
+  log "Done"

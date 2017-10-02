@@ -1,4 +1,7 @@
+-- @shouldFailWith NoInstanceFound
 module Main where
+
+import Prelude
 
 class OverlappingVars a where
   f :: a -> a
@@ -9,4 +12,3 @@ instance overlappingVarsFoo :: OverlappingVars (Foo a a) where
   f a = a
 
 test = f (Foo "" 0)
-

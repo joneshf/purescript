@@ -1,18 +1,16 @@
 module Main where
 
 import Prelude
+import Partial.Unsafe (unsafePartial)
+import Test.Assert (assert')
+import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (log)
 
-tail = \(_:xs) -> xs
+snd :: forall a. Partial => Array a -> a
+snd = \[_, y] -> y
 
-foreign import error
-  """
-  function error(msg) {
-    throw msg;
-  }
-  """ :: forall a. String -> a
-
-main =
-  let ts = tail [1, 2, 3] in
-  if ts == [2, 3]
-  then Debug.Trace.trace "Done"
-  else error "Incorrect result from 'tails'."
+main :: Eff _ _
+main = do
+  let ts = unsafePartial (snd [1.0, 2.0])
+  assert' "Incorrect result from 'snd'." (ts == 2.0)
+  log "Done"

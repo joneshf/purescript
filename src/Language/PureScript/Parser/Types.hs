@@ -1,101 +1,129 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.Parser.Types
--- Copyright   :  (c) Phil Freeman 2013
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
--- |
--- Parsers for types
---
------------------------------------------------------------------------------
+module Language.PureScript.Parser.Types
+  ( parseType
+  , parsePolyType
+  , noForAll
+  , noWildcards
+  , parseTypeAtom
+  ) where
 
-module Language.PureScript.Parser.Types (
-    parseType,
-    parsePolyType,
-    noWildcards,
-    parseTypeAtom
-) where
+import Prelude.Compat
 
-import Control.Applicative
 import Control.Monad (when, unless)
+import Control.Applicative ((<|>))
+import Data.Functor (($>))
+import qualified Data.Text as T
 
-import Language.PureScript.Types
+import Language.PureScript.AST.SourcePos
+import Language.PureScript.Environment
 import Language.PureScript.Parser.Common
 import Language.PureScript.Parser.Kinds
 import Language.PureScript.Parser.Lexer
-import Language.PureScript.Environment
+import Language.PureScript.Types
+import Language.PureScript.Label (Label(..))
 
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Expr as P
 
-parseArray :: TokenParser Type
-parseArray = squares $ return tyArray
-
-parseArrayOf :: TokenParser Type
-parseArrayOf = squares $ TypeApp tyArray <$> parseType
-
 parseFunction :: TokenParser Type
-parseFunction = parens $ rarrow >> return tyFunction
+parseFunction = parens rarrow *> return tyFunction
 
 parseObject :: TokenParser Type
-parseObject = braces $ TypeApp tyObject <$> parseRow
+parseObject = braces $ TypeApp tyRecord <$> parseRow
+
+parseTypeLevelString :: TokenParser Type
+parseTypeLevelString = TypeLevelString <$> stringLiteral
 
 parseTypeWildcard :: TokenParser Type
-parseTypeWildcard = underscore >> return TypeWildcard
+parseTypeWildcard = do
+  start <- P.getPosition
+  let end = P.incSourceColumn start 1
+  underscore
+  return $ TypeWildcard (SourceSpan (P.sourceName start) (toSourcePos start) (toSourcePos end))
 
 parseTypeVariable :: TokenParser Type
 parseTypeVariable = do
   ident <- identifier
-  when (ident `elem` reservedTypeNames) $ P.unexpected ident
+  when (ident `elem` reservedTypeNames) $ P.unexpected (T.unpack ident)
   return $ TypeVar ident
 
 parseTypeConstructor :: TokenParser Type
-parseTypeConstructor = TypeConstructor <$> parseQualified properName
+parseTypeConstructor = TypeConstructor <$> parseQualified typeName
 
 parseForAll :: TokenParser Type
-parseForAll = mkForAll <$> (P.try (reserved "forall") *> P.many1 (indented *> identifier) <* indented <* dot)
-                       <*> parseConstrainedType
+parseForAll = mkForAll <$> ((reserved "forall" <|> reserved "∀") *> P.many1 (indented *> identifier) <* indented <* dot)
+                       <*> parseType
+
+
+-- |
+-- Parse an atomic type with no `forall`
+--
+noForAll :: TokenParser Type -> TokenParser Type
+noForAll p = do
+ ty <- p
+ when (containsForAll ty) $ P.unexpected "forall"
+ return ty
 
 -- |
 -- Parse a type as it appears in e.g. a data constructor
 --
 parseTypeAtom :: TokenParser Type
-parseTypeAtom = indented *> P.choice (map P.try
-            [ parseArray
-            , parseArrayOf
-            , parseFunction
+parseTypeAtom = indented *> P.choice
+            [ P.try parseFunction
+            , parseTypeLevelString
             , parseObject
             , parseTypeWildcard
+            , parseForAll
             , parseTypeVariable
             , parseTypeConstructor
-            , parseForAll
-            , parens parseRow
-            , parens parsePolyType ])
+            -- This try is needed due to some unfortunate ambiguities between rows and kinded types
+            , P.try (parens parseRow)
+            , ParensInType <$> parens parsePolyType
+            ]
 
-parseConstrainedType :: TokenParser Type
+parseConstrainedType :: TokenParser ([Constraint], Type)
 parseConstrainedType = do
-  constraints <- P.optionMaybe . P.try $ do
-    constraints <- parens . commaSep1 $ do
-      className <- parseQualified properName
-      indented
-      ty <- P.many parseTypeAtom
-      return (className, ty)
-    _ <- rfatArrow
-    return constraints
+  constraints <- parens (commaSep1 parseConstraint) <|> pure <$> parseConstraint
+  _ <- rfatArrow
   indented
   ty <- parseType
-  return $ maybe ty (flip ConstrainedType ty) constraints
+  return (constraints, ty)
+  where
+  parseConstraint = do
+    className <- parseQualified properName
+    indented
+    ty <- P.many parseTypeAtom
+    return (Constraint className ty Nothing)
+
+-- This is here to improve the error message when the user
+-- tries to use the old style constraint contexts.
+-- TODO: Remove this before 1.0
+typeOrConstrainedType :: TokenParser Type
+typeOrConstrainedType = do
+  e <- P.try (Left <$> parseConstrainedType) <|> Right <$> parseTypeAtom
+  case e of
+    Left ([c], ty) -> pure (ConstrainedType c ty)
+    Left _ ->
+      P.unexpected $
+        unlines [ "comma in constraints."
+                , ""
+                , "Class constraints in type annotations can no longer be grouped in parentheses."
+                , "Each constraint should now be separated by `=>`, for example:"
+                , "    `(Applicative f, Semigroup a) => a -> f a -> f a`"
+                , "  would now be written as:"
+                , "    `Applicative f => Semigroup a => a -> f a -> f a`."
+                ]
+    Right ty -> pure ty
 
 parseAnyType :: TokenParser Type
-parseAnyType = P.buildExpressionParser operators (buildPostfixParser postfixTable parseTypeAtom) P.<?> "type"
+parseAnyType = P.buildExpressionParser operators (buildPostfixParser postfixTable typeOrConstrainedType) P.<?> "type"
   where
   operators = [ [ P.Infix (return TypeApp) P.AssocLeft ]
-              , [ P.Infix (rarrow >> return function) P.AssocRight ] ]
-  postfixTable = [ \t -> KindedType t <$> (P.try (indented *> doubleColon) *> parseKind)
+              , [ P.Infix (P.try (parseQualified parseOperator) >>= \ident ->
+                    return (BinaryNoParensType (TypeOp ident))) P.AssocRight
+                ]
+              , [ P.Infix (rarrow $> function) P.AssocRight ]
+              ]
+  postfixTable = [ \t -> KindedType t <$> (indented *> doubleColon *> parseKind)
                  ]
 
 -- |
@@ -122,13 +150,11 @@ noWildcards p = do
   when (containsWildcards ty) $ P.unexpected "type wildcard"
   return ty
 
-parseNameAndType :: TokenParser t -> TokenParser (String, t)
-parseNameAndType p = (,) <$> (indented *> (lname <|> stringLiteral) <* indented <* doubleColon) <*> p
+parseNameAndType :: TokenParser t -> TokenParser (Label, t)
+parseNameAndType p = (,) <$> (indented *> (Label <$> parseLabel) <* indented <* doubleColon) <*> p
 
 parseRowEnding :: TokenParser Type
-parseRowEnding = P.option REmpty $ indented *> pipe *> indented *> P.choice  (map P.try
-            [ parseTypeWildcard
-            , TypeVar <$> identifier ])
+parseRowEnding = P.option REmpty $ indented *> pipe *> indented *> parseType
 
 parseRow :: TokenParser Type
 parseRow = (curry rowFromList <$> commaSep (parseNameAndType parsePolyType) <*> parseRowEnding) P.<?> "row"

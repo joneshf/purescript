@@ -1,7 +1,10 @@
 module Main where
 
-  data Extend r a = Extend { prev :: r a, next :: a }
+import Prelude
+import Control.Monad.Eff.Console (log)
 
-  data Matrix r a = Square (r (r a)) | Bigger (Matrix (Extend r) a)
+data Extend r a = Extend { prev :: r a, next :: a }
 
-  main = Debug.Trace.trace "Done"
+data Matrix r a = Square (r (r a)) | Bigger (Matrix (Extend r) a)
+
+main = log "Done"

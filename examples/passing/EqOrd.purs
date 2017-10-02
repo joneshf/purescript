@@ -1,5 +1,8 @@
 module Main where
 
+import Prelude
+import Control.Monad.Eff.Console (log, logShow)
+
 data Pair a b = Pair a b
 
 instance ordPair :: (Ord a, Ord b) => Ord (Pair a b) where
@@ -8,7 +11,8 @@ instance ordPair :: (Ord a, Ord b) => Ord (Pair a b) where
     r -> r
 
 instance eqPair :: (Eq a, Eq b) => Eq (Pair a b) where
-  (==) (Pair a1 b1) (Pair a2 b2) = a1 == a2 && b1 == b2
-  (/=) (Pair a1 b1) (Pair a2 b2) = a1 /= a2 || b1 /= b2
+  eq (Pair a1 b1) (Pair a2 b2) = a1 == a2 && b1 == b2
 
-main = Debug.Trace.print $ Pair 1 2 == Pair 1 2
+main = do
+  logShow $ Pair 1.0 2.0 == Pair 1.0 2.0
+  log "Done"

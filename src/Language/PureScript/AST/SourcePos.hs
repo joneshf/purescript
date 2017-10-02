@@ -1,53 +1,82 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.AST.SourcePos
--- Copyright   :  (c) 2013-14 Phil Freeman, (c) 2014 Gary Burgess, and other contributors
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
--- | Source position information
---
------------------------------------------------------------------------------
-
-{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
-
-module Language.PureScript.AST.SourcePos where
-
-import qualified Data.Data as D
-
+{-# LANGUAGE DeriveGeneric #-}
 -- |
 -- Source position information
 --
-data SourcePos = SourcePos
-  { -- |
-    -- Line number
-    --
-    sourcePosLine :: Int
-    -- |
-    -- Column number
-    --
-  , sourcePosColumn :: Int
-  } deriving (D.Data, D.Typeable)
+module Language.PureScript.AST.SourcePos where
 
-instance Show SourcePos where
-  show sp = "line " ++ show (sourcePosLine sp) ++ ", column " ++ show (sourcePosColumn sp)
+import Prelude.Compat
+
+import Control.DeepSeq (NFData)
+import Data.Aeson ((.=), (.:))
+import Data.Monoid
+import Data.Text (Text)
+import GHC.Generics (Generic)
+import Language.PureScript.Comments
+import qualified Data.Aeson as A
+import qualified Data.Text as T
+import System.FilePath (makeRelative)
+
+-- | Source annotation - position information and comments.
+type SourceAnn = (SourceSpan, [Comment])
+
+-- | Source position information
+data SourcePos = SourcePos
+  { sourcePosLine :: Int
+    -- ^ Line number
+  , sourcePosColumn :: Int
+    -- ^ Column number
+  } deriving (Show, Eq, Ord, Generic)
+
+instance NFData SourcePos
+
+displaySourcePos :: SourcePos -> Text
+displaySourcePos sp =
+  "line " <> T.pack (show (sourcePosLine sp)) <>
+    ", column " <> T.pack (show (sourcePosColumn sp))
+
+instance A.ToJSON SourcePos where
+  toJSON SourcePos{..} =
+    A.toJSON [sourcePosLine, sourcePosColumn]
+
+instance A.FromJSON SourcePos where
+  parseJSON arr = do
+    [line, col] <- A.parseJSON arr
+    return $ SourcePos line col
 
 data SourceSpan = SourceSpan
-  { -- |
-    -- Source name
-    --
-    spanName :: String
-    -- |
-    -- Start of the span
-    --
+  { spanName :: String
+    -- ^ Source name
   , spanStart :: SourcePos
-    -- End of the span
-    --
+    -- ^ Start of the span
   , spanEnd :: SourcePos
-  } deriving (D.Data, D.Typeable)
+    -- ^ End of the span
+  } deriving (Show, Eq, Ord, Generic)
 
-instance Show SourceSpan where
-  show sp = spanName sp ++ " " ++ show (spanStart sp) ++ " - " ++ show (spanEnd sp)
+instance NFData SourceSpan
+
+displayStartEndPos :: SourceSpan -> Text
+displayStartEndPos sp =
+  displaySourcePos (spanStart sp) <> " - " <>
+  displaySourcePos (spanEnd sp)
+
+displaySourceSpan :: FilePath -> SourceSpan -> Text
+displaySourceSpan relPath sp =
+  T.pack (makeRelative relPath (spanName sp)) <> " " <>
+    displayStartEndPos sp
+
+instance A.ToJSON SourceSpan where
+  toJSON SourceSpan{..} =
+    A.object [ "name"  .= spanName
+             , "start" .= spanStart
+             , "end"   .= spanEnd
+             ]
+
+instance A.FromJSON SourceSpan where
+  parseJSON = A.withObject "SourceSpan" $ \o ->
+    SourceSpan     <$>
+      o .: "name"  <*>
+      o .: "start" <*>
+      o .: "end"
+
+internalModuleSourceSpan :: String -> SourceSpan
+internalModuleSourceSpan name = SourceSpan name (SourcePos 0 0) (SourcePos 0 0)

@@ -1,83 +1,85 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.BindingGroups
--- Copyright   :  (c) Phil Freeman 2013
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
 -- |
 -- This module implements the desugaring pass which creates binding groups from sets of
 -- mutually-recursive value declarations and mutually-recursive type declarations.
 --
------------------------------------------------------------------------------
+module Language.PureScript.Sugar.BindingGroups
+  ( createBindingGroups
+  , createBindingGroupsModule
+  , collapseBindingGroups
+  , collapseBindingGroupsModule
+  ) where
 
-{-# LANGUAGE FlexibleContexts #-}
+import Prelude.Compat
+import Protolude (ordNub)
 
-module Language.PureScript.Sugar.BindingGroups (
-    createBindingGroups,
-    createBindingGroupsModule,
-    collapseBindingGroups,
-    collapseBindingGroupsModule
-) where
+import Control.Monad ((<=<))
+import Control.Monad.Error.Class (MonadError(..))
 
 import Data.Graph
-import Data.List (nub, intersect)
-import Data.Maybe (isJust, mapMaybe)
-import Control.Applicative
-import Control.Monad ((<=<))
-import Control.Monad.Error.Class
-
+import Data.List (intersect)
+import Data.Maybe (isJust)
+import qualified Data.List.NonEmpty as NEL
 import qualified Data.Set as S
 
 import Language.PureScript.AST
-import Language.PureScript.Names
-import Language.PureScript.Types
+import Language.PureScript.Crash
 import Language.PureScript.Environment
 import Language.PureScript.Errors
+import Language.PureScript.Names
+import Language.PureScript.Types
 
 -- |
 -- Replace all sets of mutually-recursive declarations in a module with binding groups
 --
-createBindingGroupsModule :: (Functor m, Applicative m, MonadError ErrorStack m) => [Module] -> m [Module]
-createBindingGroupsModule = mapM $ \(Module coms name ds exps) -> Module coms name <$> createBindingGroups name ds <*> pure exps
+createBindingGroupsModule
+  :: (MonadError MultipleErrors m)
+  => Module
+  -> m Module
+createBindingGroupsModule (Module ss coms name ds exps) =
+  Module ss coms name <$> createBindingGroups name ds <*> pure exps
 
 -- |
 -- Collapse all binding groups in a module to individual declarations
 --
 collapseBindingGroupsModule :: [Module] -> [Module]
-collapseBindingGroupsModule = map $ \(Module coms name ds exps) -> Module coms name (collapseBindingGroups ds) exps
+collapseBindingGroupsModule =
+  fmap $ \(Module ss coms name ds exps) ->
+    Module ss coms name (collapseBindingGroups ds) exps
 
-createBindingGroups :: (Functor m, Applicative m, MonadError ErrorStack m) => ModuleName -> [Declaration] -> m [Declaration]
+createBindingGroups
+  :: forall m
+   . (MonadError MultipleErrors m)
+  => ModuleName
+  -> [Declaration]
+  -> m [Declaration]
 createBindingGroups moduleName = mapM f <=< handleDecls
 
   where
   (f, _, _) = everywhereOnValuesTopDownM return handleExprs return
 
-  handleExprs :: (Functor m, MonadError ErrorStack m) => Expr -> m Expr
+  handleExprs :: Expr -> m Expr
   handleExprs (Let ds val) = flip Let val <$> handleDecls ds
   handleExprs other = return other
 
   -- |
   -- Replace all sets of mutually-recursive declarations with binding groups
   --
-  handleDecls :: (Functor m, MonadError ErrorStack m) => [Declaration] -> m [Declaration]
+  handleDecls :: [Declaration] -> m [Declaration]
   handleDecls ds = do
     let values = filter isValueDecl ds
         dataDecls = filter isDataDecl ds
-        allProperNames = map getProperName dataDecls
-        dataVerts = map (\d -> (d, getProperName d, usedProperNames moduleName d `intersect` allProperNames)) dataDecls
+        allProperNames = fmap declTypeName dataDecls
+        dataVerts = fmap (\d -> (d, declTypeName d, usedTypeNames moduleName d `intersect` allProperNames)) dataDecls
     dataBindingGroupDecls <- parU (stronglyConnComp dataVerts) toDataBindingGroup
-    let allIdents = map getIdent values
-        valueVerts = map (\d -> (d, getIdent d, usedIdents moduleName d `intersect` allIdents)) values
+    let allIdents = fmap declIdent values
+        valueVerts = fmap (\d -> (d, declIdent d, usedIdents moduleName d `intersect` allIdents)) values
     bindingGroupDecls <- parU (stronglyConnComp valueVerts) (toBindingGroup moduleName)
     return $ filter isImportDecl ds ++
+             filter isExternKindDecl ds ++
              filter isExternDataDecl ds ++
-             filter isExternInstanceDecl ds ++
              dataBindingGroupDecls ++
              filter isTypeClassDeclaration ds ++
+             filter isTypeClassInstanceDeclaration ds ++
              filter isFixityDecl ds ++
              filter isExternDecl ds ++
              bindingGroupDecls
@@ -86,11 +88,14 @@ createBindingGroups moduleName = mapM f <=< handleDecls
 -- Collapse all binding groups to individual declarations
 --
 collapseBindingGroups :: [Declaration] -> [Declaration]
-collapseBindingGroups = let (f, _, _) = everywhereOnValues id collapseBindingGroupsForValue id in map f . concatMap go
+collapseBindingGroups =
+  let (f, _, _) = everywhereOnValues id collapseBindingGroupsForValue id
+  in fmap f . concatMap go
   where
-  go (DataBindingGroupDeclaration ds) = ds
-  go (BindingGroupDeclaration ds) = map (\(ident, nameKind, val) -> ValueDeclaration ident nameKind [] (Right val)) ds
-  go (PositionedDeclaration pos com d) = map (PositionedDeclaration pos com) $ go d
+  go (DataBindingGroupDeclaration ds) = NEL.toList ds
+  go (BindingGroupDeclaration ds) =
+    NEL.toList $ fmap (\((sa, ident), nameKind, val) ->
+      ValueDeclaration sa ident nameKind [] [MkUnguarded val]) ds
   go other = [other]
 
 collapseBindingGroupsForValue :: Expr -> Expr
@@ -98,66 +103,73 @@ collapseBindingGroupsForValue (Let ds val) = Let (collapseBindingGroups ds) val
 collapseBindingGroupsForValue other = other
 
 usedIdents :: ModuleName -> Declaration -> [Ident]
-usedIdents moduleName =
-  let (f, _, _, _, _) = everythingWithContextOnValues S.empty [] (++) def usedNamesE usedNamesB def def
-  in nub . f
+usedIdents moduleName = ordNub . usedIdents' S.empty . getValue
   where
-  def s _ = (s, [])
+  def _ _ = []
 
-  usedNamesE :: S.Set Ident -> Expr -> (S.Set Ident, [Ident])
-  usedNamesE scope (Var (Qualified Nothing name)) | name `S.notMember` scope = (scope, [name])
-  usedNamesE scope (Var (Qualified (Just moduleName') name)) | moduleName == moduleName' && name `S.notMember` scope = (scope, [name])
-  usedNamesE scope (Abs (Left name) _) = (name `S.insert` scope, [])
-  usedNamesE scope _ = (scope, [])
+  getValue (ValueDeclaration _ _ _ [] [MkUnguarded val]) = val
+  getValue ValueDeclaration{} = internalError "Binders should have been desugared"
+  getValue _ = internalError "Expected ValueDeclaration"
 
-  usedNamesB :: S.Set Ident -> Binder -> (S.Set Ident, [Ident])
-  usedNamesB scope binder = (scope `S.union` S.fromList (binderNames binder), [])
+  (_, usedIdents', _, _, _) = everythingWithScope def usedNamesE def def def
+
+  usedNamesE :: S.Set Ident -> Expr -> [Ident]
+  usedNamesE scope (Var (Qualified Nothing name))
+    | name `S.notMember` scope = [name]
+  usedNamesE scope (Var (Qualified (Just moduleName') name))
+    | moduleName == moduleName' && name `S.notMember` scope = [name]
+  usedNamesE _ _ = []
 
 usedImmediateIdents :: ModuleName -> Declaration -> [Ident]
 usedImmediateIdents moduleName =
   let (f, _, _, _, _) = everythingWithContextOnValues True [] (++) def usedNamesE def def def
-  in nub . f
+  in ordNub . f
   where
   def s _ = (s, [])
 
   usedNamesE :: Bool -> Expr -> (Bool, [Ident])
   usedNamesE True (Var (Qualified Nothing name)) = (True, [name])
-  usedNamesE True (Var (Qualified (Just moduleName') name)) | moduleName == moduleName' = (True, [name])
+  usedNamesE True (Var (Qualified (Just moduleName') name))
+    | moduleName == moduleName' = (True, [name])
   usedNamesE True (Abs _ _) = (False, [])
   usedNamesE scope _ = (scope, [])
 
-usedProperNames :: ModuleName -> Declaration -> [ProperName]
-usedProperNames moduleName =
+usedTypeNames :: ModuleName -> Declaration -> [ProperName 'TypeName]
+usedTypeNames moduleName =
   let (f, _, _, _, _) = accumTypes (everythingOnTypes (++) usedNames)
-  in nub . f
+  in ordNub . f
   where
-  usedNames :: Type -> [ProperName]
-  usedNames (ConstrainedType constraints _) = flip mapMaybe constraints $ \qual ->
-    case qual of
-      (Qualified (Just moduleName') name, _) | moduleName == moduleName' -> Just name
-      _ -> Nothing
-  usedNames (TypeConstructor (Qualified (Just moduleName') name)) | moduleName == moduleName' = [name]
+  usedNames :: Type -> [ProperName 'TypeName]
+  usedNames (ConstrainedType con _) =
+    case con of
+      (Constraint (Qualified (Just moduleName') name) _ _)
+        | moduleName == moduleName' -> [coerceProperName name]
+      _ -> []
+  usedNames (TypeConstructor (Qualified (Just moduleName') name))
+    | moduleName == moduleName' = [name]
   usedNames _ = []
 
-getIdent :: Declaration -> Ident
-getIdent (ValueDeclaration ident _ _ _) = ident
-getIdent (PositionedDeclaration _ _ d) = getIdent d
-getIdent _ = error "Expected ValueDeclaration"
+declIdent :: Declaration -> Ident
+declIdent (ValueDeclaration _ ident _ _ _) = ident
+declIdent _ = internalError "Expected ValueDeclaration"
 
-getProperName :: Declaration -> ProperName
-getProperName (DataDeclaration _ pn _ _) = pn
-getProperName (TypeSynonymDeclaration pn _ _) = pn
-getProperName (PositionedDeclaration _ _ d) = getProperName d
-getProperName _ = error "Expected DataDeclaration"
+declTypeName :: Declaration -> ProperName 'TypeName
+declTypeName (DataDeclaration _ _ pn _ _) = pn
+declTypeName (TypeSynonymDeclaration _ pn _ _) = pn
+declTypeName _ = internalError "Expected DataDeclaration"
 
 -- |
 -- Convert a group of mutually-recursive dependencies into a BindingGroupDeclaration (or simple ValueDeclaration).
 --
 --
-toBindingGroup :: (Functor m, MonadError ErrorStack m) => ModuleName -> SCC Declaration -> m Declaration
+toBindingGroup
+  :: forall m
+   . (MonadError MultipleErrors m)
+   => ModuleName
+   -> SCC Declaration
+   -> m Declaration
 toBindingGroup _ (AcyclicSCC d) = return d
-toBindingGroup _ (CyclicSCC [d]) = return d
-toBindingGroup moduleName (CyclicSCC ds') =
+toBindingGroup moduleName (CyclicSCC ds') = do
   -- Once we have a mutually-recursive group of declarations, we need to sort
   -- them further by their immediate dependencies (those outside function
   -- bodies). In particular, this is relevant for type instance dictionaries
@@ -167,41 +179,39 @@ toBindingGroup moduleName (CyclicSCC ds') =
   -- If we discover declarations that still contain mutually-recursive
   -- immediate references, we're guaranteed to get an undefined reference at
   -- runtime, so treat this as an error. See also github issue #365.
-  BindingGroupDeclaration <$> mapM toBinding (stronglyConnComp valueVerts)
+  BindingGroupDeclaration . NEL.fromList <$> mapM toBinding (stronglyConnComp valueVerts)
   where
   idents :: [Ident]
-  idents = map (\(_, i, _) -> i) valueVerts
+  idents = fmap (\(_, i, _) -> i) valueVerts
 
   valueVerts :: [(Declaration, Ident, [Ident])]
-  valueVerts = map (\d -> (d, getIdent d, usedImmediateIdents moduleName d `intersect` idents)) ds'
+  valueVerts = fmap (\d -> (d, declIdent d, usedImmediateIdents moduleName d `intersect` idents)) ds'
 
-  toBinding :: (MonadError ErrorStack m) => SCC Declaration -> m (Ident, NameKind, Expr)
+  toBinding :: SCC Declaration -> m ((SourceAnn, Ident), NameKind, Expr)
   toBinding (AcyclicSCC d) = return $ fromValueDecl d
-  toBinding (CyclicSCC ~(d:ds)) = cycleError d ds
+  toBinding (CyclicSCC ds) = throwError $ foldMap cycleError ds
 
-  cycleError :: (MonadError ErrorStack m) => Declaration -> [Declaration] -> m a
-  cycleError (PositionedDeclaration p _ d) ds = rethrowWithPosition p $ cycleError d ds
-  cycleError (ValueDeclaration n _ _ (Right e)) [] = throwError $
-    mkErrorStack ("Cycle in definition of " ++ show n) (Just (ExprError e))
-  cycleError d ds@(_:_) = rethrow (mkCompileError ("The following are not yet defined here: " ++ unwords (map (show . getIdent) ds)) Nothing `combineErrors`) $ cycleError d []
-  cycleError _ _ = error "Expected ValueDeclaration"
+  cycleError :: Declaration -> MultipleErrors
+  cycleError (ValueDeclaration (ss, _) n _ _ [MkUnguarded _]) = errorMessage' ss $ CycleInDeclaration n
+  cycleError _ = internalError "cycleError: Expected ValueDeclaration"
 
-toDataBindingGroup :: (MonadError ErrorStack m) => SCC Declaration -> m Declaration
+toDataBindingGroup
+  :: MonadError MultipleErrors m
+  => SCC Declaration
+  -> m Declaration
 toDataBindingGroup (AcyclicSCC d) = return d
 toDataBindingGroup (CyclicSCC [d]) = case isTypeSynonym d of
-  Just pn -> throwError $ mkErrorStack ("Cycle in type synonym " ++ show pn) Nothing
+  Just pn -> throwError . errorMessage' (declSourceSpan d) $ CycleInTypeSynonym (Just pn)
   _ -> return d
 toDataBindingGroup (CyclicSCC ds')
-  | all (isJust . isTypeSynonym) ds' = throwError $ mkErrorStack "Cycle in type synonyms" Nothing
-  | otherwise = return $ DataBindingGroupDeclaration ds'
+  | all (isJust . isTypeSynonym) ds' = throwError . errorMessage' (declSourceSpan (head ds')) $ CycleInTypeSynonym Nothing
+  | otherwise = return . DataBindingGroupDeclaration $ NEL.fromList ds'
 
-isTypeSynonym :: Declaration -> Maybe ProperName
-isTypeSynonym (TypeSynonymDeclaration pn _ _) = Just pn
-isTypeSynonym (PositionedDeclaration _ _ d) = isTypeSynonym d
+isTypeSynonym :: Declaration -> Maybe (ProperName 'TypeName)
+isTypeSynonym (TypeSynonymDeclaration _ pn _ _) = Just pn
 isTypeSynonym _ = Nothing
 
-fromValueDecl :: Declaration -> (Ident, NameKind, Expr)
-fromValueDecl (ValueDeclaration ident nameKind [] (Right val)) = (ident, nameKind, val)
-fromValueDecl ValueDeclaration{} = error "Binders should have been desugared"
-fromValueDecl (PositionedDeclaration _ _ d) = fromValueDecl d
-fromValueDecl _ = error "Expected ValueDeclaration"
+fromValueDecl :: Declaration -> ((SourceAnn, Ident), NameKind, Expr)
+fromValueDecl (ValueDeclaration sa ident nameKind [] [MkUnguarded val]) = ((sa, ident), nameKind, val)
+fromValueDecl ValueDeclaration{} = internalError "Binders should have been desugared"
+fromValueDecl _ = internalError "Expected ValueDeclaration"

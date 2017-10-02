@@ -1,20 +1,17 @@
 module Main where
 
-zipWith :: forall a b c. (a -> b -> c) -> [a] -> [b] -> [c]
-zipWith _ [] _  = []
-zipWith _ _  [] = []
-zipWith f (x:xs) (y:ys) = f x y : zipWith f xs ys
+import Prelude
+import Control.Monad.Eff.Console (log, logShow)
+import Data.Function (on)
 
-test1 = [1, 2, 3] `zipWith (+)` [4, 5, 6]
+comparing :: forall a b. Ord b => (a -> b) -> a -> a -> Ordering
+comparing f = compare `on` f
 
-comparing :: forall a b. (Ord b) => (a -> b) -> a -> a -> Ordering
-comparing f = compare `Data.Function.on` f
+null [] = true
+null _ = false
 
-sum [] = 0
-sum (x:xs) = x + sum xs
-
-test2 = [1, 2, 3] `comparing sum` [4, 5, 6]
+test = [1.0, 2.0, 3.0] `comparing null` [4.0, 5.0, 6.0]
 
 main = do
-  Debug.Trace.print test1
-  Debug.Trace.print test2
+  logShow test
+  log "Done"

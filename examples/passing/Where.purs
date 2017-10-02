@@ -1,35 +1,33 @@
 module Main where
 
 import Prelude
+import Partial.Unsafe (unsafePartial)
 import Control.Monad.Eff
-import Control.Monad.ST
+import Control.Monad.Eff.Console (logShow, log)
 
 test1 x = y
   where
   y :: Number
-  y = x + 1
+  y = x + 1.0
 
 test2 x y = x' + y'
   where
-  x' = x + 1
-  y' = y + 1
+  x' = x + 1.0
+  y' = y + 1.0
 
-
-test3 = f 1 2 3
+test3 = f 1.0 2.0 3.0
   where f x y z = x + y + z
 
-
-test4 = f (+) [1, 2]
+test4 = f (+) [1.0, 2.0]
   where f x [y, z] = x y z
 
-
-test5 = g 10
+test5 = g 10.0
   where
-  f x | x > 0 = g (x / 2) + 1
-  f x = 0
-  g x = f (x - 1) + 1
+  f x | x > 0.0 = g (x / 2.0) + 1.0
+  f x = 0.0
+  g x = f (x - 1.0) + 1.0
 
-test6 = if f true then f 1 else f 2
+test6 = if f true then f 1.0 else f 2.0
   where f :: forall a. a -> a
         f x = x
 
@@ -37,13 +35,15 @@ test7 :: Number -> Number
 test7 x = go x
   where
   go y | (x - 0.1 < y * y) && (y * y < x + 0.1) = y
-  go y = go $ (y + x / y) / 2
+  go y = go $ (y + x / y) / 2.0
 
+main :: Eff _ _
 main = do
-  Debug.Trace.print (test1 1)
-  Debug.Trace.print (test2 1 2)
-  Debug.Trace.print test3
-  Debug.Trace.print test4
-  Debug.Trace.print test5
-  Debug.Trace.print test6
-  Debug.Trace.print (test7 100)
+  logShow (test1 1.0)
+  logShow (test2 1.0 2.0)
+  logShow test3
+  unsafePartial (logShow test4)
+  logShow test5
+  logShow test6
+  logShow (test7 100.0)
+  log "Done"

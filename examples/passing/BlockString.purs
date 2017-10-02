@@ -1,12 +1,9 @@
 module Main where
 
-foreign import foo """
-  function foo(s) {
-    return s;
-  }
-""" :: String -> String
+import Prelude
+import Control.Monad.Eff.Console (log)
 
-bar :: String -> String
-bar _ = foo "test"
+foo :: String
+foo = """foo"""
 
-main = Debug.Trace.trace "Done"
+main = log "Done"

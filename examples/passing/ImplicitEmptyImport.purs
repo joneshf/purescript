@@ -1,6 +1,9 @@
 module Main where
 
+import Prelude
+import Control.Monad.Eff.Console (log)
+
 main = do
-  Debug.Trace.trace "Hello"
-  Debug.Trace.trace "Goodbye"
-  Debug.Trace.trace "Done"
+  log "Hello"
+  log "Goodbye"
+  log "Done"

@@ -1,54 +1,38 @@
------------------------------------------------------------------------------
---
--- Module      :  Language.PureScript.Sugar.DoNotation
--- Copyright   :  (c) Phil Freeman 2013
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
--- |
--- This module implements the desugaring pass which replaces do-notation statements with
--- appropriate calls to (>>=) from the Prelude.Monad type class.
---
------------------------------------------------------------------------------
+-- | This module implements the desugaring pass which replaces do-notation statements with
+-- appropriate calls to bind.
 
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternGuards #-}
 
-module Language.PureScript.Sugar.DoNotation (
-    desugarDoModule
-) where
+module Language.PureScript.Sugar.DoNotation (desugarDoModule) where
 
-import Language.PureScript.Names
-import Language.PureScript.AST
-import Language.PureScript.Errors
+import           Prelude.Compat
 
+import           Control.Monad.Error.Class (MonadError(..))
+import           Control.Monad.Supply.Class
+import           Data.Monoid (First(..))
+import           Language.PureScript.AST
+import           Language.PureScript.Crash
+import           Language.PureScript.Errors
+import           Language.PureScript.Names
 import qualified Language.PureScript.Constants as C
 
-import Control.Applicative
-import Control.Monad.Error.Class
-import Control.Monad.Supply.Class
+-- | Replace all @DoNotationBind@ and @DoNotationValue@ constructors with
+-- applications of the bind function in scope, and all @DoNotationLet@
+-- constructors with let expressions.
+desugarDoModule :: forall m. (MonadSupply m, MonadError MultipleErrors m) => Module -> m Module
+desugarDoModule (Module ss coms mn ds exts) = Module ss coms mn <$> parU ds desugarDo <*> pure exts
 
--- |
--- Replace all @DoNotationBind@ and @DoNotationValue@ constructors with applications of the Prelude.(>>=) function,
--- and all @DoNotationLet@ constructors with let expressions.
---
-desugarDoModule :: forall m. (Applicative m, MonadSupply m, MonadError ErrorStack m) => Module -> m Module
-desugarDoModule (Module coms mn ds exts) = Module coms mn <$> parU ds desugarDo <*> pure exts
-
-desugarDo :: forall m. (Applicative m, MonadSupply m, MonadError ErrorStack m) => Declaration -> m Declaration
-desugarDo (PositionedDeclaration pos com d) = PositionedDeclaration pos com <$> (rethrowWithPosition pos $ desugarDo d)
+-- | Desugar a single do statement
+desugarDo :: forall m. (MonadSupply m, MonadError MultipleErrors m) => Declaration -> m Declaration
 desugarDo d =
   let (f, _, _) = everywhereOnValuesM return replace return
-  in f d
+  in rethrowWithPosition (declSourceSpan d) $ f d
   where
-  prelude :: ModuleName
-  prelude = ModuleName [ProperName C.prelude]
-
   bind :: Expr
-  bind = Var (Qualified (Just prelude) (Op (C.>>=)))
+  bind = Var (Qualified Nothing (Ident C.bind))
+
+  discard :: Expr
+  discard = Var (Qualified Nothing (Ident C.discard))
 
   replace :: Expr -> m Expr
   replace (Do els) = go els
@@ -56,22 +40,31 @@ desugarDo d =
   replace other = return other
 
   go :: [DoNotationElement] -> m Expr
-  go [] = error "The impossible happened in desugarDo"
+  go [] = internalError "The impossible happened in desugarDo"
   go [DoNotationValue val] = return val
   go (DoNotationValue val : rest) = do
     rest' <- go rest
-    return $ App (App bind val) (Abs (Left (Ident C.__unused)) rest')
-  go [DoNotationBind _ _] = throwError $ mkErrorStack "Bind statement cannot be the last statement in a do block" Nothing
-  go (DoNotationBind NullBinder val : rest) = go (DoNotationValue val : rest)
+    return $ App (App discard val) (Abs (VarBinder (Ident C.__unused)) rest')
+  go [DoNotationBind _ _] = throwError . errorMessage $ InvalidDoBind
+  go (DoNotationBind b _ : _) | First (Just ident) <- foldMap fromIdent (binderNames b) =
+      throwError . errorMessage $ CannotUseBindWithDo (Ident ident)
+    where
+      fromIdent (Ident i) | i `elem` [ C.bind, C.discard ] = First (Just i)
+      fromIdent _ = mempty
   go (DoNotationBind (VarBinder ident) val : rest) = do
     rest' <- go rest
-    return $ App (App bind val) (Abs (Left ident) rest')
+    return $ App (App bind val) (Abs (VarBinder ident) rest')
   go (DoNotationBind binder val : rest) = do
     rest' <- go rest
-    ident <- Ident <$> freshName
-    return $ App (App bind val) (Abs (Left ident) (Case [Var (Qualified Nothing ident)] [CaseAlternative [binder] (Right rest')]))
-  go [DoNotationLet _] = throwError $ mkErrorStack "Let statement cannot be the last statement in a do block" Nothing
+    ident <- freshIdent'
+    return $ App (App bind val) (Abs (VarBinder ident) (Case [Var (Qualified Nothing ident)] [CaseAlternative [binder] [MkUnguarded rest']]))
+  go [DoNotationLet _] = throwError . errorMessage $ InvalidDoLet
   go (DoNotationLet ds : rest) = do
+    let checkBind :: Declaration -> m ()
+        checkBind (ValueDeclaration (ss, _) i@(Ident name) _ _ _)
+          | name `elem` [ C.bind, C.discard ] = throwError . errorMessage' ss $ CannotUseBindWithDo i
+        checkBind _ = pure ()
+    mapM_ checkBind ds
     rest' <- go rest
     return $ Let ds rest'
   go (PositionedDoNotationElement pos com el : rest) = rethrowWithPosition pos $ PositionedValue pos com <$> go (el : rest)

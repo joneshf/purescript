@@ -1,22 +1,17 @@
------------------------------------------------------------------------------
+{-# LANGUAGE DeriveGeneric #-}
+-- |
+-- Operators fixity and associativity
 --
--- Module      :  Language.PureScript.AST.Operators
--- Copyright   :  (c) 2013-14 Phil Freeman, (c) 2014 Gary Burgess, and other contributors
--- License     :  MIT
---
--- Maintainer  :  Phil Freeman <paf31@cantab.net>
--- Stability   :  experimental
--- Portability :
---
--- | Operators fixity and associativity
---
------------------------------------------------------------------------------
-
-{-# LANGUAGE DeriveDataTypeable #-}
-
 module Language.PureScript.AST.Operators where
 
-import qualified Data.Data as D
+import Prelude.Compat
+
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
+import Data.Aeson ((.=))
+import qualified Data.Aeson as A
+
+import Language.PureScript.Crash
 
 -- |
 -- A precedence level for an infix operator
@@ -26,14 +21,38 @@ type Precedence = Integer
 -- |
 -- Associativity for infix operators
 --
-data Associativity = Infixl | Infixr | Infix deriving (D.Data, D.Typeable)
+data Associativity = Infixl | Infixr | Infix
+  deriving (Show, Eq, Ord, Generic)
 
-instance Show Associativity where
-  show Infixl = "infixl"
-  show Infixr = "infixr"
-  show Infix  = "infix"
+instance NFData Associativity
+
+showAssoc :: Associativity -> String
+showAssoc Infixl = "infixl"
+showAssoc Infixr = "infixr"
+showAssoc Infix  = "infix"
+
+readAssoc :: String -> Associativity
+readAssoc "infixl" = Infixl
+readAssoc "infixr" = Infixr
+readAssoc "infix"  = Infix
+readAssoc _ = internalError "readAssoc: no parse"
+
+instance A.ToJSON Associativity where
+  toJSON = A.toJSON . showAssoc
+
+instance A.FromJSON Associativity where
+  parseJSON = fmap readAssoc . A.parseJSON
 
 -- |
 -- Fixity data for infix operators
 --
-data Fixity = Fixity Associativity Precedence deriving (Show, D.Data, D.Typeable)
+data Fixity = Fixity Associativity Precedence
+  deriving (Show, Eq, Ord, Generic)
+
+instance NFData Fixity
+
+instance A.ToJSON Fixity where
+  toJSON (Fixity associativity precedence) =
+    A.object [ "associativity" .= associativity
+             , "precedence" .= precedence
+             ]

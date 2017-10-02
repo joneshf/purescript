@@ -1,5 +1,8 @@
 module Main where
 
+import Prelude
+import Control.Monad.Eff.Console (log)
+
 class Foo a b
 
 class Bar a c
@@ -12,4 +15,4 @@ instance bar :: Bar (a -> b) b
 
 instance baz :: (Eq a) => Baz (a -> b) a b
 
-main = Debug.Trace.trace "Done"
+main = log "Done"
