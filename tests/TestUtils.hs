@@ -15,7 +15,7 @@ import Data.List (sort)
 import qualified Data.Text as T
 import System.Process
 import System.Directory
-import System.Info
+import System.Exit (ExitCode(..), exitFailure)
 import System.IO.UTF8 (readUTF8FileT)
 import System.FilePath ((</>))
 import qualified System.FilePath.Glob as Glob
@@ -51,13 +51,19 @@ readInput inputFiles = forM inputFiles $ \inputFile -> do
 getSupportModuleTuples :: IO [(FilePath, P.Module)]
 getSupportModuleTuples = do
   cd <- getCurrentDirectory
-  let supportDir = cd </> "tests" </> "support" </> "bower_components"
-  supportPurs <- Glob.globDir1 (Glob.compile "purescript-*/src/**/*.purs") supportDir
-  supportPursFiles <- readInput supportPurs
-  modules <- runExceptT $ ExceptT . return $ P.parseModulesFromFiles id supportPursFiles
-  case modules of
-    Right ms -> return ms
-    Left errs -> fail (P.prettyPrintMultipleErrors P.defaultPPEOptions errs)
+  let supportDir = cd </> "tests" </> "support"
+  setCurrentDirectory supportDir
+  result <- readProcessWithExitCode "psc-package" ["sources"] ""
+  case result of
+    (ExitFailure _, _, err) -> putStrLn err >> exitFailure
+    (ExitSuccess, str, _) -> do
+      let sourceGlobs = Glob.compile <$> lines str
+      supportPurs <- Glob.globDir sourceGlobs supportDir
+      supportPursFiles <- readInput . join $ fst supportPurs
+      modules <- runExceptT $ ExceptT . return $ P.parseModulesFromFiles id supportPursFiles
+      case modules of
+        Right ms -> return ms
+        Left errs -> fail (P.prettyPrintMultipleErrors P.defaultPPEOptions errs)
 
 getSupportModuleNames :: IO [T.Text]
 getSupportModuleNames = sort . map (P.runModuleName . P.getModuleName . snd) <$> getSupportModuleTuples

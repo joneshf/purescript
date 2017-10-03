@@ -91,7 +91,7 @@ assertCompletedOk (line, expecteds) = specify line $ do
   (unusedR, completions) <- runCM (completion' (reverse line, ""))
   let unused = reverse unusedR
   let actuals = map ((unused ++) . replacement) completions
-  sort expecteds `shouldBe` sort actuals
+  sort actuals `shouldBe` sort expecteds
 
 runCM :: CompletionM a -> IO a
 runCM act = do

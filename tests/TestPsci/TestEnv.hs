@@ -3,6 +3,7 @@ module TestPsci.TestEnv where
 import Prelude ()
 import Prelude.Compat
 
+import           Control.Monad (join)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.RWS.Strict (evalRWST, RWST)
 import qualified Language.PureScript as P
@@ -22,20 +23,25 @@ initTestPSCiEnv :: IO (PSCiState, PSCiConfig)
 initTestPSCiEnv = do
   -- Load test support packages
   cwd <- getCurrentDirectory
-  let supportDir = cwd </> "tests" </> "support" </> "bower_components"
-  let supportFiles ext = Glob.globDir1 (Glob.compile ("purescript-*/src/**/*." ++ ext)) supportDir
-  pursFiles <- supportFiles "purs"
-  modulesOrError <- loadAllModules pursFiles
-  case modulesOrError of
-    Left err ->
-      print err >> exitFailure
-    Right modules -> do
-      -- Make modules
-      makeResultOrError <- runMake . make $ modules
-      case makeResultOrError of
-        Left errs -> putStrLn (P.prettyPrintMultipleErrors P.defaultPPEOptions errs) >> exitFailure
-        Right (externs, env) ->
-          return (PSCiState [] [] (zip (map snd modules) externs), PSCiConfig pursFiles env)
+  let supportDir = cwd </> "tests" </> "support"
+  result <- readProcessWithExitCode "psc-package" ["sources"] ""
+  case result of
+    (ExitFailure _, _, err) -> putStrLn err >> exitFailure
+    (ExitSuccess, str, _) -> do
+      let sourceGlobs = Glob.compile <$> lines str
+      pursFiles <- join . fst <$> Glob.globDir sourceGlobs supportDir
+      modulesOrError <- loadAllModules pursFiles
+      print modulesOrError
+      case modulesOrError of
+        Left err ->
+          print err >> exitFailure
+        Right modules -> do
+          -- Make modules
+          makeResultOrError <- runMake . make $ modules
+          case makeResultOrError of
+            Left errs -> putStrLn (P.prettyPrintMultipleErrors P.defaultPPEOptions errs) >> exitFailure
+            Right (externs, env) ->
+              return (PSCiState [] [] (zip (map snd modules) externs), PSCiConfig pursFiles env)
 
 -- | Execute a TestPSCi, returning IO
 execTestPSCi :: TestPSCi a -> IO a

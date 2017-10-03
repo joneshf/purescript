@@ -1,6 +1,6 @@
 {
     "name": "support",
-    "set": "purerl-0.11.6-20171002075048",
+    "set": "purerl-0.11.6-20171002083507",
     "source": "https://github.com/joneshf/purescript-package-sets.git",
     "depends": [
         "arrays",

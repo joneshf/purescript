@@ -21,7 +21,6 @@ extra-source-files:
   - examples/**/*.json
   - app/static/*
   - tests/support/*.json
-  - tests/support/setup-win.cmd
   - tests/support/psci/*.purs
   - tests/support/pscide/src/*.purs
   - tests/support/pscide/src/*.erl
