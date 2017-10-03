@@ -66,6 +66,17 @@ install:
     mkdir -p "$HOME/.local/bin"
     mv stack "$HOME/.local/bin/"
   fi
+- | # Install psc-package.
+  if test ! -f "$HOME/.local/bin/psc-package"
+  then
+    CONVERTED_OS_NAME=$(travis/convert-os-name.sh)
+    RELEASES="https://github.com/purescript/psc-package/releases"
+    TAG="$(wget -q -O - $RELEASES/latest --server-response --max-redirect 0 2>&1 | sed -n -e 's/.*Location:.*tag\///p')"
+    wget -O "$HOME/psc-package.tar.gz" "$RELEASES/download/$TAG/$CONVERTED_OS_NAME.tar.gz"
+    tar -xvf "$HOME/psc-package.tar.gz" -C "$HOME/"
+    chmod a+x "$HOME/psc-package/psc-package"
+    mv "$HOME/psc-package/psc-package" "$HOME/.local/bin/"
+  fi
 - npm install -g bower # for psc-docs / psc-publish tests
 - export OS_NAME=$(./travis/convert-os-name.sh)
 # Install 'timeout'
