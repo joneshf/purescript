@@ -112,9 +112,7 @@ data EFunBinder
 
 data EBinder
   = EBinder Erl -- TODO split out literals?
-
   | EGuardedBinder Erl Guard
-  -- | EVarBinder String
 
   deriving (Show, Eq)
 
@@ -122,7 +120,7 @@ data Guard
   = Guard Erl
   deriving (Show, Eq)
 
--- \ Possibly qualified atom
+-- } Possibly qualified atom
 -- | TODO : This is not really an atom, each part is an atom.
 data Atom
   = Atom (Maybe Text) Text
@@ -254,10 +252,6 @@ data BinaryOperator
   -- Bitwise right shift
   --
   | ShiftRight
-  -- -- |
-  -- -- Bitwise right shift with zero-fill
-  -- --
-  -- | ZeroFillShiftRight
   deriving (Show, Eq)
 
 everywhereOnErl :: (Erl -> Erl) -> Erl -> Erl
