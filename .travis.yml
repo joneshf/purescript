@@ -98,8 +98,7 @@ before_deploy:
 - ./bundle/build.sh $OS_NAME
 deploy:
   provider: releases
-  api_key:
-    secure: "OmCkllsKW6wx05uimp62e2ZCsUsRbwAerA7UUlv8S/tlg07eDcAu8bBrDIXgsZtS9MC+lyMxLjeQ/XXrRQ0E/pClQBXiOthIQ93+ojERLDZlv56Sgdpi8KctCOM4dDa8W/oQOcF6izx4nKuxU4MnCKGSCdJTrcaihN00SGIpY6w="
+  api_key: $RELEASE_KEY
   file:
     - bundle/$OS_NAME.tar.gz
     - bundle/$OS_NAME.sha
