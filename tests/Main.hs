@@ -11,6 +11,7 @@ import Prelude.Compat
 import qualified TestDocs
 import qualified TestPscIde
 import qualified TestPrimDocs
+import qualified TestPsci
 import qualified TestUtils
 
 import System.IO (hSetEncoding, stdout, stderr, utf8)
@@ -31,9 +32,8 @@ main = do
   -- TODO
   -- heading "psc-publish test suite"
   -- TestPscPublish.main
-  -- TODO
-  -- heading "psci test suite"
-  -- TestPsci.main
+  heading "psci test suite"
+  TestPsci.main
   heading "psc-ide test suite"
   TestPscIde.main
 

@@ -34,10 +34,8 @@ findNodeProcess = runMaybeT . msum $ map (MaybeT . findExecutable) names
 -- updating.
 --
 updateSupportCode :: IO ()
-updateSupportCode = do
-  setCurrentDirectory "tests/support"
-  callProcess "psc-package" ["update"]
-  setCurrentDirectory "../.."
+updateSupportCode =
+  pushd "tests/support" $ callProcess "psc-package" ["update"]
 
 readInput :: [FilePath] -> IO [(FilePath, T.Text)]
 readInput inputFiles = forM inputFiles $ \inputFile -> do
@@ -52,8 +50,7 @@ getSupportModuleTuples :: IO [(FilePath, P.Module)]
 getSupportModuleTuples = do
   cd <- getCurrentDirectory
   let supportDir = cd </> "tests" </> "support"
-  setCurrentDirectory supportDir
-  result <- readProcessWithExitCode "psc-package" ["sources"] ""
+  result <- pushd supportDir $ readProcessWithExitCode "psc-package" ["sources"] ""
   case result of
     (ExitFailure _, _, err) -> putStrLn err >> exitFailure
     (ExitSuccess, str, _) -> do

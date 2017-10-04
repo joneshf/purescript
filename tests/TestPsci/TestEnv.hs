@@ -14,6 +14,7 @@ import           System.FilePath ((</>))
 import qualified System.FilePath.Glob as Glob
 import           System.Process (readProcessWithExitCode)
 import           Test.Hspec (shouldBe)
+import           TestUtils (pushd)
 
 -- | A monad transformer for handle PSCi actions in tests
 type TestPSCi a = RWST PSCiConfig () PSCiState IO a
@@ -24,14 +25,13 @@ initTestPSCiEnv = do
   -- Load test support packages
   cwd <- getCurrentDirectory
   let supportDir = cwd </> "tests" </> "support"
-  result <- readProcessWithExitCode "psc-package" ["sources"] ""
+  result <- pushd supportDir $ readProcessWithExitCode "psc-package" ["sources"] ""
   case result of
     (ExitFailure _, _, err) -> putStrLn err >> exitFailure
     (ExitSuccess, str, _) -> do
       let sourceGlobs = Glob.compile <$> lines str
       pursFiles <- join . fst <$> Glob.globDir sourceGlobs supportDir
       modulesOrError <- loadAllModules pursFiles
-      print modulesOrError
       case modulesOrError of
         Left err ->
           print err >> exitFailure
