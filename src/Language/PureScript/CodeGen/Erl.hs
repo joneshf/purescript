@@ -10,21 +10,23 @@ module Language.PureScript.CodeGen.Erl
 
 import Prelude.Compat
 
-import Language.PureScript.CodeGen.Erl.AST as AST
+
+import Control.Arrow (first, second)
+import Control.Monad (unless)
+import Control.Monad.Error.Class (MonadError(..))
+import Control.Monad.Reader (MonadReader(..))
+import Control.Monad.Supply.Class
+import Control.Monad.Writer.Class (MonadWriter(..), tell)
 
 import qualified Data.Text as T
 import Data.Traversable
 import Data.Foldable
 import Data.Monoid
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe (fromMaybe, mapMaybe)
-import Control.Monad.Error.Class (MonadError(..))
 
-import Control.Arrow (first, second)
-import Control.Monad.Reader (MonadReader(..))
-
-import Control.Monad.Supply.Class
-
+import Language.PureScript.CodeGen.Erl.AST as AST
 import Language.PureScript.CoreFn hiding (moduleExports)
 import Language.PureScript.Errors (MultipleErrors, rethrow, addHint, ErrorMessageHint(..), SimpleErrorMessage(..), errorMessage, rethrowWithPosition)
 import Language.PureScript.Options
@@ -63,7 +65,7 @@ tyArity _ = 0
 -- module.
 --
 moduleToErl :: forall m .
-    (Monad m, MonadReader Options m, MonadSupply m, MonadError MultipleErrors m)
+    (Monad m, MonadReader Options m, MonadSupply m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => E.Environment
   -> Module Ann
   -> [(T.Text, Int)]
@@ -74,6 +76,7 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
     let (exports, erlDecls) = biconcat $ res <> map reExportForeign foreigns
     optimized <- traverse optimize erlDecls
     traverse_ checkExport foreigns
+    checkUnusedFFIImplementations
 
     let attributes = findAttributes decls
 
@@ -129,6 +132,14 @@ moduleToErl env (Module _ mn _ _ foreigns decls) foreignExports =
 
   findExport :: T.Text -> Maybe Int
   findExport n = snd <$> find ((n==) . fst) foreignExports
+
+  checkUnusedFFIImplementations :: m ()
+  checkUnusedFFIImplementations =
+    let foreignIdents = foldMap (S.singleton . Ident . fst) foreignExports
+        importedIdents = foldMap (S.singleton . fst) foreigns
+        unusedFFI = foreignIdents S.\\ importedIdents
+        unusedError = UnusedFFIImplementations mn $ S.toList unusedFFI
+    in unless (null unusedFFI) $ tell $ errorMessage unusedError
 
   topBindToErl :: Bind Ann -> m ([(Atom,Int)], [Erl])
   topBindToErl (NonRec ann ident val) = topNonRecToErl ann ident val
