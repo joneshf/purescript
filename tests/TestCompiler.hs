@@ -61,7 +61,7 @@ main = hspec spec
 spec :: Spec
 spec = do
 
-  (supportModules, supportExterns, supportForeigns, passingTestCases, warningTestCases, failingTestCases) <- runIO $ do
+  (supportModules, supportExterns, supportForeigns, _passingTestCases, _warningTestCases, failingTestCases) <- runIO $ do
     cwd <- getCurrentDirectory
     let passing = cwd </> "examples" </> "passing"
     let warning = cwd </> "examples" </> "warning"
@@ -79,22 +79,22 @@ spec = do
       Left errs -> fail (P.prettyPrintMultipleErrors P.defaultPPEOptions errs)
       Right (externs, foreigns) -> return (modules, externs, foreigns, passingFiles, warningFiles, failingFiles)
 
-  outputFile <- runIO $ do
-    tmp <- getTemporaryDirectory
-    createDirectoryIfMissing False (tmp </> logpath)
-    openFile (tmp </> logpath </> logfile) WriteMode
+  -- outputFile <- runIO $ do
+  --   tmp <- getTemporaryDirectory
+  --   createDirectoryIfMissing False (tmp </> logpath)
+  --   openFile (tmp </> logpath </> logfile) WriteMode
 
-  context "Passing examples" $
-    forM_ passingTestCases $ \testPurs ->
-      it ("'" <> takeFileName (getTestMain testPurs) <> "' should compile and run without error") $
-        assertCompiles supportModules supportExterns supportForeigns testPurs outputFile
+  -- context "Passing examples" $
+  --   forM_ passingTestCases $ \testPurs ->
+  --     it ("'" <> takeFileName (getTestMain testPurs) <> "' should compile and run without error") $
+  --       assertCompiles supportModules supportExterns supportForeigns testPurs outputFile
 
-  context "Warning examples" $
-    forM_ warningTestCases $ \testPurs -> do
-      let mainPath = getTestMain testPurs
-      expectedWarnings <- runIO $ getShouldWarnWith mainPath
-      it ("'" <> takeFileName mainPath <> "' should compile with warning(s) '" <> intercalate "', '" expectedWarnings <> "'") $
-        assertCompilesWithWarnings supportModules supportExterns supportForeigns testPurs expectedWarnings
+  -- context "Warning examples" $
+  --   forM_ warningTestCases $ \testPurs -> do
+  --     let mainPath = getTestMain testPurs
+  --     expectedWarnings <- runIO $ getShouldWarnWith mainPath
+  --     it ("'" <> takeFileName mainPath <> "' should compile with warning(s) '" <> intercalate "', '" expectedWarnings <> "'") $
+  --       assertCompilesWithWarnings supportModules supportExterns supportForeigns testPurs expectedWarnings
 
   context "Failing examples" $
     forM_ failingTestCases $ \testPurs -> do
@@ -140,10 +140,10 @@ spec = do
   getShouldFailWith :: FilePath -> IO [String]
   getShouldFailWith = extractPragma "shouldFailWith"
 
-  -- Scans a file for @shouldWarnWith directives in the comments, used to
-  -- determine expected warnings
-  getShouldWarnWith :: FilePath -> IO [String]
-  getShouldWarnWith = extractPragma "shouldWarnWith"
+  -- -- Scans a file for @shouldWarnWith directives in the comments, used to
+  -- -- determine expected warnings
+  -- getShouldWarnWith :: FilePath -> IO [String]
+  -- getShouldWarnWith = extractPragma "shouldWarnWith"
 
   extractPragma :: String -> FilePath -> IO [String]
   extractPragma pragma = fmap go . readUTF8File
